@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Toolstack logo" width="180">
+</p>
+
 # Toolstack
 
 **Action without access for agent tools.**
