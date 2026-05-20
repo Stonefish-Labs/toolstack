@@ -1,4 +1,9 @@
-# Implementation Plan: Broker (synthetic-dispatch slice)
+# Historical Implementation Plan: Broker
+
+This document is archived implementation history. It describes an earlier broker
+build slice and is not the current project status or source of truth. For
+current behavior, see the component README and the active design docs under
+`../design/`.
 
 **Audience**: this is a hand-off plan for an implementer (likely another Claude model) who has not seen the prior conversation. Read the referenced design docs first — they have the architectural context.
 
@@ -18,14 +23,14 @@ What this slice gives you when complete:
 
 Before writing code, read these in order:
 
-1. `../docs/trust-agents-with-action-not-access.md` — the system's thesis (skim).
-2. `../docs/design/00-principles.md` — operational principles.
-3. `../docs/design/01-architecture.md` — where the broker fits in the four-component shape.
-4. `../docs/design/10-broker.md` — **the spec for this component.** Read fully. Note the HTTP surface, SQLite schema, policy interface, fail-closed semantics, and forwarding mechanics (you'll implement the auth/policy/lifecycle/audit parts; the forwarding parts get stubbed via synthetic dispatch).
-5. `../docs/design/decisions/001-token-granularity.md` — tokens are (caller, profile) bound.
-6. `../docs/design/decisions/005-policy-simple-now.md` — simple YAML ACL now; the decision function is a swap seam.
-7. `../docs/design/30-approver-discord.md` — for context on what the bot expects from the broker. Your API has to match the contract the bot was built against.
-8. `../discord-approver/PLAN.md` — for the same reason. Pay attention to the `BrokerClient` interface in that plan; your HTTP API needs to satisfy it.
+1. `../trust-agents-with-action-not-access.md` — the system's thesis (skim).
+2. `../design/00-principles.md` — operational principles.
+3. `../design/01-architecture.md` — where the broker fits in the four-component shape.
+4. `../design/10-broker.md` — **the spec for this component.** Read fully. Note the HTTP surface, SQLite schema, policy interface, fail-closed semantics, and forwarding mechanics (you'll implement the auth/policy/lifecycle/audit parts; the forwarding parts get stubbed via synthetic dispatch).
+5. `../design/decisions/001-token-granularity.md` — tokens are (caller, profile) bound.
+6. `../design/decisions/005-policy-simple-now.md` — simple YAML ACL now; the decision function is a swap seam.
+7. `../design/30-approver-discord.md` — for context on what the bot expects from the broker. Your API has to match the contract the bot was built against.
+8. `discord-approver-implementation-plan.md` — for the same reason. Pay attention to the `BrokerClient` interface in that plan; your HTTP API needs to satisfy it.
 
 If anything in this plan conflicts with the design docs, the design docs win — flag the conflict and ask before deviating.
 
@@ -36,7 +41,7 @@ A working broker that:
 1. Issues bearer tokens for callers (`brokerctl create-caller`) and verifies them on every authenticated request.
 2. Evaluates a profile-driven YAML ACL to decide allow / review / deny per action request.
 3. Persists every request, approval, grant, and audit event in SQLite.
-4. Exposes the HTTP API in [`docs/design/10-broker.md`](../docs/design/10-broker.md), matching the contract the Discord bot was built against.
+4. Exposes the HTTP API in [`../design/10-broker.md`](../design/10-broker.md), matching the contract the Discord bot was built against.
 5. Synthetically dispatches allowed actions (no real tool calls — returns a stub result).
 6. Times out pending approvals to `expired` and fails closed on unknown states.
 7. Provides a `brokerctl` CLI for operators.
@@ -47,7 +52,7 @@ A working broker that:
 To keep this broker swappable and the architecture honest:
 
 1. **`Dispatcher` protocol** — the broker calls `dispatcher.dispatch(request)` and gets back a `DispatchResult`. Implementations: `SyntheticDispatcher` (this slice) and later `HTTPDispatcher` + `MCPDispatcher`. The broker must not import any dispatch implementation directly — only the protocol.
-2. **Pluggable policy decision function** — `decide(input: PolicyInput) -> PolicyDecision` is the swap seam. v1 implementation reads YAML. Per [ADR 005](../docs/design/decisions/005-policy-simple-now.md), the broker should be able to swap to OPA, Cedar, or an agentic evaluator later without touching call sites.
+2. **Pluggable policy decision function** — `decide(input: PolicyInput) -> PolicyDecision` is the swap seam. v1 implementation reads YAML. Per [ADR 005](../design/decisions/005-policy-simple-now.md), the broker should be able to swap to OPA, Cedar, or an agentic evaluator later without touching call sites.
 3. **Registry as a separate module** — `registry.py` knows how to read `tools/<id>/toolyard.yaml` files. Other modules never read those files directly. This decouples the broker from the toolyard's eventual on-disk layout.
 4. **Audit recording is a sink, not a side effect of every function** — pass an `Auditor` (or equivalent) to handlers; they call `auditor.record(...)`. This makes it easy to swap to JSONL export or off-host replication later.
 
@@ -57,7 +62,6 @@ The test for these seams: `policy.py`, `lifecycle.py`, `approval.py` should be t
 
 ```
 broker/
-├── PLAN.md                           # this file
 ├── README.md                         # write this as part of step 1
 ├── pyproject.toml                    # or requirements.txt — pick one
 ├── .gitignore                        # standard Python ignores + state/ + *.sqlite3
@@ -194,7 +198,7 @@ class DispatchResult:
 
 ### `db.py`
 
-SQLite schema **must match** [`docs/design/10-broker.md`](../docs/design/10-broker.md) "Data model (SQLite)" section — schema is in that doc verbatim. Add `created_at` indexes where useful for the timeout reaper and listing.
+SQLite schema **must match** [`../design/10-broker.md`](../design/10-broker.md) "Data model (SQLite)" section — schema is in that doc verbatim. Add `created_at` indexes where useful for the timeout reaper and listing.
 
 CRUD primitives:
 - `init_db(db_path)` — create tables if absent.
@@ -448,7 +452,7 @@ Tests should drive the function directly with a controllable clock.
 
 ### `api.py`
 
-FastAPI app. Endpoints per [`docs/design/10-broker.md`](../docs/design/10-broker.md):
+FastAPI app. Endpoints per [`../design/10-broker.md`](../design/10-broker.md):
 
 **Unauthenticated:**
 - `GET /v1/health` → `{"ok": true}`
@@ -588,7 +592,7 @@ Write `docs/manual-testing.md` covering:
    - Curl with the revoked token → 401.
 
 7. **Bot integration** (the headline test):
-   - Spin up the Discord approver bot from `../discord-approver/`.
+   - Spin up the Discord approver bot from `../../discord-approver/`.
    - Configure the bot's `APPROVER_BROKER_URL` to point at this broker.
    - Configure `APPROVER_BROKER_TOKEN_FILE` with the `bot.approver` raw token.
    - Stop using `scaffolding/fake_broker.py` entirely.
@@ -604,7 +608,7 @@ This is the slice's win condition: the same bot that worked against the fake bro
 
 - [ ] All unit tests pass (`pytest tests/`).
 - [ ] Manual test procedure passes end-to-end, including the bot-integration step.
-- [ ] The Discord bot's `HTTPBrokerClient` works against this broker without modification (matches the API contract from `docs/design/10-broker.md`).
+- [ ] The Discord bot's `HTTPBrokerClient` works against this broker without modification (matches the API contract from `../design/10-broker.md`).
 - [ ] `policy.py`, `lifecycle.py`, `approval.py`, `timeouts.py` are testable without FastAPI imports (verify by inspection — these modules shouldn't import `fastapi`).
 - [ ] `SyntheticDispatcher` is the only `Dispatcher` implementation in `dispatch.py`; the protocol is clearly defined so HTTP/MCP dispatchers slot in later.
 - [ ] No secret-shaped fields appear in audit `detail_json` or `arguments_json` (verify by writing a test that records an audit event with `arguments={"password": "x"}` and asserting it's redacted).
@@ -617,7 +621,7 @@ This is the slice's win condition: the same bot that worked against the fake bro
 - Real REST forwarding to tool servers (HTTPDispatcher) — next slice.
 - Real MCP JSON-RPC forwarding (MCPDispatcher) — next slice.
 - The toolyard or any tool containers.
-- The Discord approver bot (already built in `../discord-approver/`).
+- The Discord approver bot (already built in `../../discord-approver/`).
 - `op-connect-shim` integration in the broker (the broker doesn't resolve any 1Password secrets).
 - OPA / Rego policy engine.
 - Multi-tenant or multi-user support.
@@ -630,7 +634,7 @@ This is the slice's win condition: the same bot that worked against the fake bro
 
 - **FastAPI** is recommended. Pydantic v2 for request/response models. Uvicorn for the ASGI runner.
 - **No async DB driver** — stdlib `sqlite3` is fine. Wrap blocking calls in `asyncio.to_thread` if needed inside async handlers. Performance is not a concern at home-lab scale.
-- **The bot was built first.** Its `BrokerClient` interface is the de facto API contract for what this broker has to expose. If something in `docs/design/10-broker.md` is ambiguous, look at how the bot consumes the API (in `../discord-approver/src/discord_approver/broker_client.py`) for the authoritative shape.
+- **The bot was built first.** Its `BrokerClient` interface is the de facto API contract for what this broker has to expose. If something in `../design/10-broker.md` is ambiguous, look at how the bot consumes the API (in `../../discord-approver/src/discord_approver/broker_client.py`) for the authoritative shape.
 - **The `broker.*` op convention**: the approver profile uses synthetic ops like `broker.approve` to authorize approval-endpoint access. These are *not* dispatched as tool calls — they're a permission flag. The auth check happens in `api.py`; nothing downstream sees these ops.
 - **Status transitions are one-way after terminal**: once a request is `completed`, `failed`, `rejected`, `expired`, or `denied`, it doesn't move. Defensive code in `approval.py` and `lifecycle.py` should refuse updates to terminal states.
 - **Argument redaction is a defense-in-depth measure, not the primary control.** The right design is: tool servers receive arguments scoped by the broker's policy, and the policy never *passes* secret-shaped fields through. But until the registry has per-op argument schemas, regex redaction at the audit layer is the safety net.
@@ -641,7 +645,7 @@ This is the slice's win condition: the same bot that worked against the fake bro
 
 ## When you're done
 
-Update this PLAN.md (or write a `STATUS.md`) noting:
+Original completion note requested:
 - What was built and where.
 - Anything that diverged from this plan and why.
 - The exact `brokerctl` commands the operator needs to run for first-time setup (these will become the manual-testing doc's setup section if not already).

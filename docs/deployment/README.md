@@ -28,14 +28,14 @@ that tool's descriptor.
 
 ## 0. Prerequisites
 
-Already true on this VM:
+Target host prerequisites:
 
 - Ubuntu 24.04
 - Docker installed and active
 - Tailscale installed and active
 - `admin` is in the `docker` group
 
-Operator-provided values still needed:
+Operator-provided values:
 
 - 1Password Connect URL reachable from this VM
 - 1Password Connect read token for vault `ToolServer`

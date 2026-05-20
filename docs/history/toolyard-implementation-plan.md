@@ -1,4 +1,9 @@
-# Implementation Plan: Toolyard (Docker-based tool runner)
+# Historical Implementation Plan: Toolyard
+
+This document is archived implementation history. It describes an earlier
+toolyard build slice and is not the current project status or source of truth.
+For current behavior, see the component README and the active design docs under
+`../design/`.
 
 **Audience**: this is a hand-off plan for an implementer (likely another Claude model) who has not seen the prior conversation. Read the referenced design docs first — they have the architectural context.
 
@@ -18,16 +23,16 @@ What this slice gives you when complete:
 
 Before writing code, read these in order:
 
-1. `../docs/trust-agents-with-action-not-access.md` — the system's thesis (skim).
-2. `../docs/design/00-principles.md` — operational principles. Pay attention to principle 4 (secrets live with the workload) and principle 8 (easy to onboard a tool).
-3. `../docs/design/01-architecture.md` — where the toolyard fits in the four-component shape.
-4. `../docs/design/20-toolyard.md` — **the spec for this component.** Read fully. The `toolyard.yaml` schema, lifecycle behavior, container conventions, and configuration table are all here.
-5. `../docs/design/21-tool-template.md` — **the spec for the hello-rest tool you'll build.** Use the REST example as your template.
-6. `../docs/design/40-secrets.md` — **the spec for per-tool secrets resolution.** Critical: read the "How the toolyard resolves" section carefully.
-7. `../docs/design/decisions/003-docker-sandboxing.md` — why Docker, what's deliberately deferred.
-8. `../docs/design/decisions/004-secrets-at-workload.md` — the trust model for secret handling.
-9. `../lib/op-connect-shim/README.md` — the library you'll use to talk to 1Password Connect.
-10. `../broker/PLAN.md` — for context on what the broker will eventually consume. You don't change the broker in this slice, but the next slice will, and the toolyard's `toolyard.yaml` files must be readable by both components.
+1. `../trust-agents-with-action-not-access.md` — the system's thesis (skim).
+2. `../design/00-principles.md` — operational principles. Pay attention to principle 4 (secrets live with the workload) and principle 8 (easy to onboard a tool).
+3. `../design/01-architecture.md` — where the toolyard fits in the four-component shape.
+4. `../design/20-toolyard.md` — **the spec for this component.** Read fully. The `toolyard.yaml` schema, lifecycle behavior, container conventions, and configuration table are all here.
+5. `../design/21-tool-template.md` — **the spec for the hello-rest tool you'll build.** Use the REST example as your template.
+6. `../design/40-secrets.md` — **the spec for per-tool secrets resolution.** Critical: read the "How the toolyard resolves" section carefully.
+7. `../design/decisions/003-docker-sandboxing.md` — why Docker, what's deliberately deferred.
+8. `../design/decisions/004-secrets-at-workload.md` — the trust model for secret handling.
+9. `../../lib/op-connect-shim/README.md` — the library you'll use to talk to 1Password Connect.
+10. `broker-implementation-plan.md` — for context on what the broker will eventually consume. You don't change the broker in this slice, but the next slice will, and the toolyard's `toolyard.yaml` files must be readable by both components.
 
 If anything in this plan conflicts with the design docs, the design docs win — flag the conflict and ask before deviating.
 
@@ -63,7 +68,6 @@ The test for these seams: `lifecycle.py`, `secrets.py`, `schema.py`, `registry.p
 
 ```
 toolyard/
-├── PLAN.md                           # this file
 ├── README.md                         # write this as part of step 1
 ├── pyproject.toml                    # or requirements.txt — pick one
 ├── .gitignore                        # standard Python ignores + state/
@@ -112,7 +116,7 @@ state/
 └── runtime.json                      # optional cache of container_id, image_digest, last_started_at
 ```
 
-Per-tool secrets directory (default `/var/lib/toolyard/secrets` per [`docs/design/20-toolyard.md`](../docs/design/20-toolyard.md)). Created at runtime, mode 0700, owned by toolyard user.
+Per-tool secrets directory (default `/var/lib/toolyard/secrets` per [`../design/20-toolyard.md`](../design/20-toolyard.md)). Created at runtime, mode 0700, owned by toolyard user.
 
 ## Module-by-module spec
 
@@ -245,7 +249,7 @@ def resolve_and_write_secrets(
 
 Don't keep resolved values in memory after writing. Pass through, write, forget.
 
-Use `op-connect-shim` from `../lib/op-connect-shim/op_connect_shim.py`. Import it via path manipulation or by symlinking it into your project — your call (the shim is stdlib-only, so vendoring works).
+Use `op-connect-shim` from `../../lib/op-connect-shim/op_connect_shim.py`. Import it via path manipulation or by symlinking it into your project — your call (the shim is stdlib-only, so vendoring works).
 
 ### `docker_driver.py`
 
@@ -363,7 +367,7 @@ def wait_for_healthy(
 
 Use `httpx` (sync is fine here). Sleep `interval_seconds` between probes. Return `True` on first 2xx, `False` if start_period_seconds expires.
 
-The toolyard logs the result. The container is left running either way (operator decides whether to investigate or restart) — this is per [`docs/design/20-toolyard.md`](../docs/design/20-toolyard.md).
+The toolyard logs the result. The container is left running either way (operator decides whether to investigate or restart) — this is per [`../design/20-toolyard.md`](../design/20-toolyard.md).
 
 ### `cli.py`
 
@@ -395,7 +399,7 @@ Important UX details:
 
 ## The `hello-rest` tool
 
-Build this in `../tools/hello-rest/`. Use [`docs/design/21-tool-template.md`](../docs/design/21-tool-template.md) as the canonical reference — copy the REST example verbatim except:
+Build this in `../../tools/hello-rest/`. Use [`../design/21-tool-template.md`](../design/21-tool-template.md) as the canonical reference — copy the REST example verbatim except:
 
 - Use Python 3.12 as the base image.
 - Verify `op-connect-shim` does NOT appear in `requirements.txt`. The tool reads `/run/secrets/api_key` directly:
@@ -449,7 +453,7 @@ Vertical slices, each independently testable:
 8. **`lifecycle.py` + `test_lifecycle.py`** — `up`, `down`, `restart`, `list_tools` against mock driver + mock resolver + temp filesystem. This is the bulk of the logic; spend time on tests here.
 9. **`CLIDockerDriver`** — implement against real Docker. Smoke test: build the official `hello-world` image equivalent, verify run/stop work. Skip if Docker isn't installed; mark tests with a fixture/skip decorator.
 10. **`cli.py` + `test_cli.py`** — wire everything together. Test by invoking the CLI as a subprocess against a tmp environment.
-11. **The `hello-rest` tool** — write the Dockerfile, app.py, toolyard.yaml under `../tools/hello-rest/`. Build it standalone first (`docker build`), confirm it runs.
+11. **The `hello-rest` tool** — write the Dockerfile, app.py, toolyard.yaml under `../../tools/hello-rest/`. Build it standalone first (`docker build`), confirm it runs.
 12. **End-to-end manual test** — follow `docs/manual-testing.md`. Provision 1Password, run `toolyard up hello-rest`, curl the endpoint, verify the secret was read.
 
 ## Testing
@@ -589,7 +593,7 @@ Write `docs/manual-testing.md` with detailed steps. Minimum coverage:
 
 ## Notes for the implementer
 
-- **`op-connect-shim` is stdlib-only** — no extra deps. Vendor it into your project (copy `op_connect_shim.py` from `../lib/op-connect-shim/`) or path-import it. Either works.
+- **`op-connect-shim` is stdlib-only** — no extra deps. Vendor it into your project (copy `op_connect_shim.py` from `../../lib/op-connect-shim/`) or path-import it. Either works.
 - **Pydantic v2** is recommended for the schema; the syntax above assumes it.
 - **YAML parser**: `PyYAML` (`yaml.safe_load`) is fine. Don't use `yaml.load` without `Loader=...`.
 - **subprocess hygiene**: when shelling out to `docker`, pass arguments as a list (no shell), and `check=False` so you can inspect non-zero exits and emit helpful errors.
@@ -600,11 +604,11 @@ Write `docs/manual-testing.md` with detailed steps. Minimum coverage:
 - **Healthcheck failures aren't fatal**: per the design doc, log + mark unhealthy + leave the container running. Operator can `restart` if needed.
 - **Idempotency**: `up` of a running tool should be a no-op (or, ideally, restart). `down` of a stopped tool is a no-op. Document the chosen behavior.
 - **State file is a cache, not source of truth**: `runtime.json` is optional. The toolyard should be able to rebuild its view from `docker ps -f name=toolyard-*` if `runtime.json` is lost.
-- **Don't grow this past ~500 LOC** (excluding tests, schema definitions, and the example tool). The toolyard is "a wrapper around `docker run` that reads YAML and knows where to mount secrets" — see [`docs/design/20-toolyard.md`](../docs/design/20-toolyard.md). If you cross 600 LOC of toolyard source, stop and review what's bloating.
+- **Don't grow this past ~500 LOC** (excluding tests, schema definitions, and the example tool). The toolyard is "a wrapper around `docker run` that reads YAML and knows where to mount secrets" — see [`../design/20-toolyard.md`](../design/20-toolyard.md). If you cross 600 LOC of toolyard source, stop and review what's bloating.
 
 ## When you're done
 
-Update this PLAN.md (or write a `STATUS.md`) noting:
+Original completion note requested:
 - What was built and where.
 - Anything that diverged from this plan and why.
 - The exact one-time setup the operator needs (1Password vault, items, Connect tokens).

@@ -166,10 +166,10 @@ The headline test — run the Discord bot against this broker:
 
 # 2. Configure the bot
 cd ../discord-approver/
-# In secrets.env or env vars:
+# Export env vars or write token files outside the repository:
 #   APPROVER_BROKER_URL=http://127.0.0.1:8765
-#   APPROVER_BROKER_TOKEN_FILE=.broker.token
-# Write the bot.approver raw token to .broker.token
+#   APPROVER_BROKER_TOKEN_FILE=/tmp/toolstack-broker.token
+# Write the bot.approver raw token to /tmp/toolstack-broker.token
 
 # 3. Start the broker (in broker/ dir)
 cd ../broker/

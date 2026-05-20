@@ -1,4 +1,9 @@
-# Implementation Plan: Discord Approver Bot
+# Historical Implementation Plan: Discord Approver Bot
+
+This document is archived implementation history. It describes the original
+Discord approver build slice and is not the current project status or source of
+truth. For current behavior, see the component README and the active design docs
+under `../design/`.
 
 **Audience**: this is a hand-off plan for an implementer (likely another Claude model) who has not seen the prior conversation. Read the referenced design docs first — they have the architectural context.
 
@@ -12,12 +17,12 @@ The bot is one of four components in a larger toolserver system; this plan cover
 
 Before writing code, read these in order:
 
-1. `../docs/trust-agents-with-action-not-access.md` — the system's thesis (skim).
-2. `../docs/design/00-principles.md` — operational principles.
-3. `../docs/design/01-architecture.md` — where the bot fits in the four-component shape.
-4. `../docs/design/30-approver-discord.md` — **the spec for this component.** Read fully.
-5. `../docs/design/decisions/006-discord-approval.md` — why Discord, why four buttons, what's deferred.
-6. `../docs/design/10-broker.md` — sections "HTTP surface" and "Data model (SQLite)" only. You need to know what the broker's API will look like (so your fake broker matches it) and what an `action_request` row contains.
+1. `../trust-agents-with-action-not-access.md` — the system's thesis (skim).
+2. `../design/00-principles.md` — operational principles.
+3. `../design/01-architecture.md` — where the bot fits in the four-component shape.
+4. `../design/30-approver-discord.md` — **the spec for this component.** Read fully.
+5. `../design/decisions/006-discord-approval.md` — why Discord, why four buttons, what's deferred.
+6. `../design/10-broker.md` — sections "HTTP surface" and "Data model (SQLite)" only. You need to know what the broker's API will look like (so your fake broker matches it) and what an `action_request` row contains.
 
 If anything in this plan conflicts with the design docs, the design docs win — flag the conflict and ask before deviating.
 
@@ -51,7 +56,6 @@ The Discord bot module (`bot.py`) is the thin shell that wires Discord events to
 
 ```
 discord-approver/
-├── PLAN.md                           # this file
 ├── README.md                         # write this as part of step 1
 ├── pyproject.toml                    # or requirements.txt — pick one
 ├── .gitignore                        # standard Python ignores + state/
@@ -110,7 +114,7 @@ class Request:
     decision_note: str | None
 ```
 
-Match the fields the broker will return (see `docs/design/10-broker.md` data model). If the broker grows fields later, the bot should tolerate unknown ones rather than crash.
+Match the fields the broker will return (see `../design/10-broker.md` data model). If the broker grows fields later, the bot should tolerate unknown ones rather than crash.
 
 ### `config.py`
 
@@ -139,7 +143,7 @@ class BrokerClient(Protocol):
 
 `HTTPBrokerClient`:
 - Uses `httpx.AsyncClient` with the bearer token preset.
-- Endpoints (match `docs/design/10-broker.md`):
+- Endpoints (match `../design/10-broker.md`):
   - `GET /v1/requests?status=pending_review&after_id=<n>`
   - `GET /v1/requests/<id>`
   - `POST /v1/requests/<id>/approve` with `{"approver": "<user>", "note": "<or null>"}`
@@ -292,7 +296,7 @@ Single entry point. Exit non-zero on config errors.
 
 Build `scaffolding/fake_broker.py` as a small FastAPI app that:
 
-1. Exposes the same endpoints the real broker will (per `docs/design/10-broker.md`):
+1. Exposes the same endpoints the real broker will (per `../design/10-broker.md`):
    - `GET /v1/requests?status=...&after_id=...`
    - `GET /v1/requests/<id>`
    - `POST /v1/requests/<id>/approve`
@@ -398,9 +402,9 @@ Write `docs/manual-testing.md` with detailed steps. At minimum it should cover:
 
 ## When you're done
 
-Update this PLAN.md (or write a follow-up `STATUS.md`) noting:
+Original completion note requested:
 - What was built and where
 - Anything that diverged from this plan and why
 - Any open questions or follow-ups for v2
 
-The next phase will wire this bot up to the real broker (per `docs/design/10-broker.md`). Keep the seam interfaces stable so that swap is a single-file change in `cli.py`.
+The next phase will wire this bot up to the real broker (per `../design/10-broker.md`). Keep the seam interfaces stable so that swap is a single-file change in `cli.py`.

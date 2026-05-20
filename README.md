@@ -53,3 +53,4 @@ Start with:
 - `docs/deployment/README.md` for the VM deployment walkthrough
 - `docs/user-guide.md` for day-to-day operator and agent usage
 - `docs/trust-agents-with-action-not-access.md` for the project thesis
+- `docs/history/` for archived implementation plans
