@@ -12,7 +12,8 @@ This document describes the four-component shape of the toolserver system and th
                                        │  HTTPS over Tailscale
                                        ▼
                                ┌───────────────┐
-                               │  Caddy        │  TLS, tailnet-only
+                               │ Tailscale     │  Serve HTTPS
+                               │ Serve         │  tailnet-only
                                └───────┬───────┘
                                        │
                                ┌───────▼───────┐
@@ -142,7 +143,7 @@ See [ADR 004](decisions/004-secrets-at-workload.md) and [`40-secrets.md`](40-sec
 
 | From → To | Path | Auth |
 |---|---|---|
-| Agent → Broker | Tailscale + Caddy | Bearer token (per agent+profile, see [ADR 001](decisions/001-token-granularity.md)) |
+| Agent → Broker | Tailscale Serve | Bearer token (per agent+profile, see [ADR 001](decisions/001-token-granularity.md)) |
 | Broker → Tool server | localhost HTTP/JSON-RPC | Optional shared secret per tool (defense in depth) |
 | Toolyard → 1Password Connect | HTTP to Connect | Read-only token for hydration; read+write token for toolyardd-mediated allowlisted updates. Both scoped to `ToolServer` and kept on the host |
 | Tool server → 1Password Connect | none | Tool containers never receive Connect tokens; writable fields go through toolyardd's per-tool Unix socket |
@@ -184,9 +185,8 @@ See [ADR 004](decisions/004-secrets-at-workload.md) and [`40-secrets.md`](40-sec
 
 ## Network topology
 
-- **Tailscale VPN**: only path agents use to reach the broker. The agent host has no other route into the tool VM.
-- **Caddy**: TLS termination at `broker.<tailnet>.ts.net`. Tailnet-only listener.
-- **Broker**: binds `127.0.0.1:NNNN` only. Not exposed beyond Caddy/Tailscale Serve.
+- **Tailscale VPN + Serve**: only path agents use to reach the broker. Tailscale Serve terminates HTTPS for `broker.<tailnet>.ts.net` and proxies to localhost.
+- **Broker**: binds `127.0.0.1:NNNN` only. Not exposed beyond Tailscale Serve.
 - **Tool containers**: bind `127.0.0.1:NNNN` only. Not reachable from anywhere except the broker host.
 - **1Password Connect**: runs on the home network, reachable from the tool VM (currently at a Tailscale IP). Only the toolyard authenticates to it.
 

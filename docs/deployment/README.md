@@ -243,9 +243,3 @@ Inspect toolyard audit events:
 ```bash
 tail -n 50 /home/admin/toolstack/toolyard/state/toolyard-audit.jsonl
 ```
-
-## Optional: Caddy
-
-Caddy is no longer the primary path on this VM. If you later want Caddy for
-extra reverse-proxy controls, adapt `docs/deployment/caddy/broker.caddy`; keep
-Tailscale-only access and continue proxying to `127.0.0.1:8765`.

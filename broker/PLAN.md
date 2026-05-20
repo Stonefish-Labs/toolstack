@@ -622,7 +622,7 @@ This is the slice's win condition: the same bot that worked against the fake bro
 - OPA / Rego policy engine.
 - Multi-tenant or multi-user support.
 - Off-host audit replication, JSONL export.
-- Caddy / Tailscale / systemd deployment artifacts.
+- Tailscale Serve / systemd deployment artifacts.
 - mTLS or shared-secret auth between broker and tools.
 - Anything in `agent-broker/` (the old monolith). Do not copy code from there.
 
@@ -635,7 +635,7 @@ This is the slice's win condition: the same bot that worked against the fake bro
 - **Status transitions are one-way after terminal**: once a request is `completed`, `failed`, `rejected`, `expired`, or `denied`, it doesn't move. Defensive code in `approval.py` and `lifecycle.py` should refuse updates to terminal states.
 - **Argument redaction is a defense-in-depth measure, not the primary control.** The right design is: tool servers receive arguments scoped by the broker's policy, and the policy never *passes* secret-shaped fields through. But until the registry has per-op argument schemas, regex redaction at the audit layer is the safety net.
 - **`secrets.token_urlsafe(32)` produces a 43-character URL-safe base64 string.** That's the raw token. SHA-256 it for storage. Store the first 8 chars of the hex digest as `hash_prefix` (handy for operator commands like `revoke-token abc12345`).
-- **Bind only to localhost** by default. The Caddy/Tailscale tier is the external boundary, not the broker itself.
+- **Bind only to localhost** by default. Tailscale Serve is the external boundary, not the broker itself.
 - **No background workers beyond the timeout reaper.** Don't introduce Celery, RQ, or any task queue. The lifecycle is synchronous within a request.
 - **Keep this small.** Target is 500–800 LOC of Python. If you cross 1000 LOC excluding tests, stop and review what's bloating.
 

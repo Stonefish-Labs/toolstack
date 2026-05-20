@@ -103,8 +103,7 @@ The old `state/broker.sqlite3` has no production data — delete or archive it a
 
 Reusable shape:
 - Systemd unit shape for the broker (binds 127.0.0.1, scoped ReadWritePaths). Adapt per [`10-broker.md`](10-broker.md) config.
-- Caddy route under `broker.<tailnet>.ts.net`. Update upstream path.
-- Tailscale unchanged.
+- Tailscale Serve route under `broker.<tailnet>.ts.net`, proxying to the broker's localhost bind address.
 
 New units needed:
 - Systemd unit for the toolyard (or just a one-shot `toolyard up` invocation at boot).

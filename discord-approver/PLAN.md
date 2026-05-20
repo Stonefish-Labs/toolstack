@@ -382,7 +382,7 @@ Write `docs/manual-testing.md` with detailed steps. At minimum it should cover:
 - DM approvals or multi-channel routing.
 - ntfy as a parallel channel (the `ApprovalUI` seam makes this addable later — don't build it now).
 - The toolyard or any tool containers.
-- Caddy, Tailscale, systemd units (those come in deployment, later).
+- Tailscale Serve and systemd units (those come in deployment, later).
 - Anything in `agent-broker/` — that's being archived. Do not lift code from it.
 
 ## Notes for the implementer
