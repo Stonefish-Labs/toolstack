@@ -38,9 +38,10 @@ downstream secrets out of the agent host.
 - [`design/20-toolyard.md`](design/20-toolyard.md) specifies tool lifecycle,
   container conventions, and descriptor handling.
 - [`design/21-tool-template.md`](design/21-tool-template.md) shows how to build a
-  new tool.
+  server-side tool.
 - [`design/22-agent-skill-convention.md`](design/22-agent-skill-convention.md)
-  describes how agent-facing skills should talk to the broker.
+  describes the matching thin client skill: broker-tool/profile config, stable
+  CLI entry points, and direct broker action calls.
 - [`design/30-approver-discord.md`](design/30-approver-discord.md) specifies the
   human approval surface.
 - [`design/40-secrets.md`](design/40-secrets.md) explains per-tool secret

@@ -99,5 +99,6 @@ curl -X POST -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/token
 Tools with a broad operation surface should usually get a thin agent skill that
 calls broker actions instead of exposing every operation in the agent's default
 context. Follow [`22-agent-skill-convention.md`](22-agent-skill-convention.md)
-for the client-side pattern: profile-local config, a direct CLI wrapper,
-dependency-free broker calls, and no downstream credentials on the agent host.
+for the client-side pattern: broker-tool/profile config under the Toolstack XDG
+layout, a stable CLI wrapper, dependency-free broker calls, and no downstream
+credentials or service logic in the skill bundle.

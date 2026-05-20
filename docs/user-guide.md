@@ -405,10 +405,23 @@ requests; in-flight requests are unaffected.
 ## Wiring up specific agents
 
 For tools with many operations, prefer a thin agent skill that calls broker
-actions with profile-local config instead of putting every action in the
+actions with broker-tool/profile config instead of putting every action in the
 agent's always-loaded context. See
 [`design/22-agent-skill-convention.md`](design/22-agent-skill-convention.md)
-for the portable Hermes/Pi/Codex convention.
+for the portable convention.
+
+The skill should bootstrap profile config and token directories under the
+Toolstack layout:
+
+```text
+<config-home>/toolstack/<broker-tool>/profiles/<profile>.env
+<config-home>/toolstack/<broker-tool>/tokens/<profile>.token
+```
+
+Normal-use skill commands should be stable executables that work from any
+current directory and call `/v1/actions/<tool>.<op>` directly. They should not
+depend on shell profile state, local package installation, virtualenvs, or
+downstream service credentials on the agent host.
 
 ### Hermes
 

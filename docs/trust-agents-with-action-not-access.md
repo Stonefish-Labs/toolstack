@@ -302,20 +302,14 @@ sound right and change nothing.
 
 Documentation is useful when it becomes operational. If the lesson is "agents
 should not hold standing access," then the next step is not another feel-good
-post about responsibility. The next step is to give agents a skill that reviews
-systems this way, calls out fake boundaries, and helps build the brokered
-version.
+post about responsibility. The next step is to build agent skills that follow
+the same boundary: small client-side wrappers that call broker actions while
+service logic and downstream credentials stay upstream.
 
-This repo includes that companion skill:
-
-```text
-skills/agent-action-broker-security/
-```
-
-Give it to an agent when you want an assessment, implementation plan, or code
-change for an agentic tool system. Its job is to ask where authority really
-lives, identify direct secret and tool-server access, reject pass-through
-wrappers, and push designs toward a brokered action-without-access boundary.
+Use [`design/22-agent-skill-convention.md`](design/22-agent-skill-convention.md)
+when turning this architecture into agent-facing skills. A good skill should ask
+where authority really lives, avoid pass-through wrappers around broad tokens,
+and push designs toward a brokered action-without-access boundary.
 
 ## What Good Looks Like
 

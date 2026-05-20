@@ -95,7 +95,8 @@ path.
   and [`docs/user-guide.md`](docs/user-guide.md).
 - **Add a tool:** start with
   [`docs/design/21-tool-template.md`](docs/design/21-tool-template.md) and the
-  examples under [`tools/`](tools/).
+  examples under [`tools/`](tools/). For the matching agent-side wrapper, use
+  [`docs/design/22-agent-skill-convention.md`](docs/design/22-agent-skill-convention.md).
 - **Review project history:** see [`docs/history/`](docs/history/). Those files
   are archived implementation plans, not current guidance.
 
