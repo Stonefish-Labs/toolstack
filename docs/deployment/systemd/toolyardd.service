@@ -1,0 +1,32 @@
+[Unit]
+Description=Toolstack Toolyard Daemon (Docker tool runner and secret proxy)
+Documentation=file:///home/admin/toolstack/toolyard/README.md
+After=network-online.target docker.service broker.service
+Wants=network-online.target broker.service
+Requires=docker.service
+
+[Service]
+Type=exec
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/toolstack/toolyard
+EnvironmentFile=/home/admin/.config/toolstack/toolyard.env
+RuntimeDirectory=toolstack/toolyardd
+RuntimeDirectoryMode=0750
+ExecStart=/home/admin/toolstack/toolyard/.venv/bin/toolyardd
+Restart=on-failure
+RestartSec=10s
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+ReadWritePaths=/home/admin/toolstack/toolyard/state /run/toolstack/toolyardd
+ReadOnlyPaths=/home/admin/toolstack /home/admin/.config/toolstack
+
+[Install]
+WantedBy=multi-user.target

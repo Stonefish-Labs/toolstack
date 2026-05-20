@@ -1,0 +1,29 @@
+[Unit]
+Description=Toolstack Discord Approver Bot
+Documentation=file:///home/admin/toolstack/discord-approver/README.md
+After=network-online.target broker.service
+Wants=network-online.target broker.service
+
+[Service]
+Type=exec
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/toolstack/discord-approver
+EnvironmentFile=/home/admin/.config/toolstack/discord-approver.env
+ExecStart=/home/admin/toolstack/discord-approver/.venv/bin/discord-approver
+Restart=on-failure
+RestartSec=10s
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+ReadWritePaths=/home/admin/toolstack/discord-approver/state
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+profile: approver
+
+# The Discord bot's profile. Only allows calling broker approval
+# endpoints — no /v1/actions dispatch at all.
+allowed_ops:
+  - "broker.approve"
+  - "broker.reject"
+  - "broker.list_requests"
+  - "broker.audit"

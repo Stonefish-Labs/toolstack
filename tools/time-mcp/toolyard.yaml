@@ -1,0 +1,21 @@
+id: time-mcp
+type: mcp-http
+description: "Time queries via MCP (current_time, time_in)"
+enabled: true
+
+entrypoint:
+  build: .
+  port: 5100
+
+# No secrets — pure compute tool.
+
+healthcheck:
+  http: /health
+  interval_seconds: 5
+  start_period_seconds: 30
+
+operations:
+  - op: current_time
+    risk: read
+  - op: time_in
+    risk: read

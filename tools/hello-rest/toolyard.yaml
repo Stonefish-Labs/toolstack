@@ -1,0 +1,22 @@
+id: hello-rest
+type: rest
+description: "Hello-world REST tool"
+enabled: true
+
+entrypoint:
+  build: .
+  port: 5000
+
+secrets:
+  - name: api_key
+    vault: ToolServer
+    field: API_KEY
+
+healthcheck:
+  http: /health
+  interval_seconds: 5
+  start_period_seconds: 30
+
+operations:
+  - op: greet
+    risk: read

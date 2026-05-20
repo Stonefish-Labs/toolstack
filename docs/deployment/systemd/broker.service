@@ -1,0 +1,29 @@
+[Unit]
+Description=Toolstack Broker (authority boundary)
+Documentation=file:///home/admin/toolstack/broker/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/toolstack/broker
+EnvironmentFile=/home/admin/.config/toolstack/broker.env
+ExecStart=/home/admin/toolstack/broker/.venv/bin/brokerctl serve
+Restart=on-failure
+RestartSec=5s
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+ReadWritePaths=/home/admin/toolstack/broker/state
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+profile: registry-admin
+
+# Used by toolyardd to ask the broker to re-read toolyard.yaml and profile files.
+allowed_ops:
+  - "broker.registry.reload"
