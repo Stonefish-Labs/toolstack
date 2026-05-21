@@ -32,6 +32,12 @@ class BrokerClient:
     async def reload_tools(self) -> dict[str, Any]:
         return await self._request("POST", "/v1/admin/tools/reload")
 
+    async def get_toolyard_tools(self) -> list[dict[str, Any]]:
+        return (await self._request("GET", "/v1/admin/toolyard/tools"))["tools"]
+
+    async def control_toolyard_tool(self, tool_id: str, action: str) -> dict[str, Any]:
+        return await self._request("POST", f"/v1/admin/toolyard/tools/{tool_id}/{action}")
+
     async def get_callers(self) -> list[dict[str, Any]]:
         return (await self._request("GET", "/v1/admin/callers"))["callers"]
 

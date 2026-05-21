@@ -154,7 +154,7 @@ def list_tools(*, config: Config, driver: DockerDriver) -> list[ToolStatus]:
                 running=record is not None and record.get("State") != "exited",
                 healthy=None,
                 host_port=desc.entrypoint.port,
-                container_id=(record or {}).get("Id"),
+                container_id=(record or {}).get("Id") or (record or {}).get("ID"),
                 image_id=(record or {}).get("image") or (record or {}).get("Image"),
             )
         )

@@ -86,6 +86,20 @@ def create_app(config: Config | None = None, broker: Any | None = None) -> FastA
         except BrokerAPIError as exc:
             return await _dashboard_response(request, user=user, error=exc.detail)
 
+    @app.post("/toolyard/tools/{tool_id}/{action}")
+    async def control_toolyard_tool(request: Request, tool_id: str, action: str):
+        user = _current_user(request)
+        if not user:
+            return RedirectResponse("/login", status_code=303)
+        if action not in {"start", "stop", "restart", "rebuild"}:
+            return await _dashboard_response(request, user=user, error="Unsupported Toolyard action")
+        try:
+            await request.app.state.broker.control_toolyard_tool(tool_id, action)
+            banner = f"Toolyard {action} requested for {_esc(tool_id)}."
+            return await _dashboard_response(request, user=user, banner=banner)
+        except BrokerAPIError as exc:
+            return await _dashboard_response(request, user=user, error=exc.detail)
+
     @app.post("/callers")
     async def create_caller(request: Request):
         user = _current_user(request)
@@ -219,6 +233,12 @@ async def _dashboard_response(
         audit_events = await broker.get_audit()
     except BrokerAPIError as exc:
         return _page("Dashboard", f"<p class='error'>{_esc(exc.detail)}</p>", user=user)
+    toolyard_tools: list[dict[str, Any]] = []
+    toolyard_error = None
+    try:
+        toolyard_tools = await broker.get_toolyard_tools()
+    except BrokerAPIError as exc:
+        toolyard_error = exc.detail
 
     body = []
     if banner:
@@ -238,10 +258,57 @@ async def _dashboard_response(
 </section>
 """
     )
+    body.append(_toolyard_section(toolyard_tools, toolyard_error))
     body.append(_cards_section(tools, callers, tokens))
     body.append(_requests_section(requests))
     body.append(_audit_section(audit_events))
     return _page("Dashboard", "".join(body), user=user)
+
+
+def _toolyard_section(tools: list[dict[str, Any]], error: str | None = None) -> str:
+    if error:
+        return f"<section><h2>Toolyard</h2><div class='error'>{_esc(error)}</div></section>"
+    if not tools:
+        return "<section><h2>Toolyard</h2><p class='muted'>No tools found in the configured tool root.</p></section>"
+    rows = []
+    for tool in tools:
+        tool_id = tool.get("id", "")
+        running = bool(tool.get("running"))
+        enabled = bool(tool.get("enabled"))
+        healthy = tool.get("healthy")
+        health_label = "n/a" if healthy is None else ("healthy" if healthy else "unhealthy")
+        status = "running" if running else "stopped"
+        rows.append(
+            "<tr>"
+            f"<td><strong>{_esc(tool_id)}</strong></td>"
+            f"<td>{_esc(status)}</td>"
+            f"<td>{'yes' if enabled else 'no'}</td>"
+            f"<td>{_esc(health_label)}</td>"
+            f"<td>{_esc(tool.get('host_port') or '')}</td>"
+            f"<td><code>{_esc(tool.get('container_id') or '')}</code></td>"
+            "<td class='actions'>"
+            f"{_toolyard_action(tool_id, 'start', disabled=running or not enabled)}"
+            f"{_toolyard_action(tool_id, 'stop', disabled=not running)}"
+            f"{_toolyard_action(tool_id, 'restart', disabled=not enabled)}"
+            f"{_toolyard_action(tool_id, 'rebuild', disabled=not enabled)}"
+            "</td>"
+            "</tr>"
+        )
+    return (
+        "<section><h2>Toolyard</h2>"
+        "<table><thead><tr><th>Tool</th><th>Status</th><th>Enabled</th>"
+        "<th>Health</th><th>Port</th><th>Container</th><th>Actions</th></tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody></table></section>"
+    )
+
+
+def _toolyard_action(tool_id: Any, action: str, *, disabled: bool = False) -> str:
+    disabled_attr = " disabled" if disabled else ""
+    return (
+        f"<form method='post' action='/toolyard/tools/{_esc(tool_id)}/{_esc(action)}'>"
+        f"<button type='submit'{disabled_attr}>{_esc(action.title())}</button>"
+        "</form>"
+    )
 
 
 def _cards_section(
@@ -440,6 +507,7 @@ code {{ display:inline-block; max-width:100%; overflow-wrap:anywhere; background
 .list li {{ display:flex; justify-content:space-between; gap:12px; border-top:1px solid var(--line); padding:8px 0; }}
 .banner {{ background:#e9f8ef; border:1px solid #a9dfbc; padding:12px; border-radius:8px; margin-bottom:16px; }}
 .error {{ background:#fff0f0; border:1px solid #efb3b3; padding:12px; border-radius:8px; color:#8c1f1f; }}
+.muted {{ color:var(--muted); }}
 .login {{ max-width:380px; margin:60px auto; display:grid; gap:12px; }}
 .login label {{ display:grid; gap:6px; }}
 .risk {{ display:inline-block; min-width:84px; text-align:center; border-radius:999px; padding:2px 8px; font-size:12px; }}

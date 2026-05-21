@@ -22,3 +22,11 @@ def test_broker_state_dir_env_overrides_xdg_default(monkeypatch, tmp_path):
     monkeypatch.delenv("BROKER_APPROVER_SIGNING_SECRET_FILE", raising=False)
 
     assert load_config().state_dir == override
+
+
+def test_broker_toolyard_control_socket_env(monkeypatch, tmp_path):
+    socket_path = tmp_path / "toolyard.sock"
+    monkeypatch.setenv("BROKER_TOOLYARD_CONTROL_SOCKET", str(socket_path))
+    monkeypatch.delenv("BROKER_APPROVER_SIGNING_SECRET_FILE", raising=False)
+
+    assert load_config().toolyard_control_socket == socket_path

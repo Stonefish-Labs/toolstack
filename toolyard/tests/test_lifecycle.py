@@ -168,3 +168,33 @@ entrypoint:
     assert statuses[0].id == "plain"
     assert statuses[0].running is True
     assert statuses[0].host_port == 5050
+    assert statuses[0].container_id == "mock-container-1"
+
+
+def test_list_tools_reads_docker_cli_id_key(tmp_path):
+    tools = tmp_path / "tools"
+    folder = tools / "plain"
+    folder.mkdir(parents=True)
+    (folder / "toolyard.yaml").write_text(
+        """
+id: plain
+type: rest
+entrypoint:
+  image: plain:latest
+  port: 5050
+""",
+        encoding="utf-8",
+    )
+
+    class DockerCLIShapeDriver(MockDockerDriver):
+        def ps(self, name_prefix: str = "toolyard-") -> list[dict]:
+            return [{
+                "ID": "docker-cli-id",
+                "Names": "toolyard-plain",
+                "State": "running",
+                "Image": "plain:latest",
+            }]
+
+    statuses = list_tools(config=Config(tools_dir=tools), driver=DockerCLIShapeDriver())
+
+    assert statuses[0].container_id == "docker-cli-id"

@@ -34,6 +34,7 @@ class Config:
     tools_dir: Path = Path("./tools")
     state_dir: Path = field(default_factory=default_state_dir)
     runtime_dir: Path = Path("/run/toolstack/toolyardd")
+    control_socket: Path = Path("/run/toolstack/toolyardd/control.sock")
     user_uid: int = 10000
     broker_reload_url: str | None = None
     broker_reload_token_file: Path | None = None
@@ -56,6 +57,7 @@ def load_config() -> Config:
     uid = int(os.environ.get("TOOLYARD_USER_UID", "10000"))
     if uid < 1:
         raise ValueError("TOOLYARD_USER_UID must be >= 1")
+    runtime_dir = Path(os.environ.get("TOOLYARD_RUNTIME_DIR", "/run/toolstack/toolyardd"))
 
     def path_env(name: str) -> Path | None:
         value = os.environ.get(name)
@@ -73,7 +75,8 @@ def load_config() -> Config:
         infisical_organization_slug=os.environ.get("TOOLYARD_INFISICAL_ORGANIZATION_SLUG") or None,
         tools_dir=Path(os.environ.get("TOOLYARD_TOOLS_DIR", "./tools")),
         state_dir=Path(os.environ.get("TOOLYARD_STATE_DIR", default_state_dir())),
-        runtime_dir=Path(os.environ.get("TOOLYARD_RUNTIME_DIR", "/run/toolstack/toolyardd")),
+        runtime_dir=runtime_dir,
+        control_socket=Path(os.environ.get("TOOLYARD_CONTROL_SOCKET", runtime_dir / "control.sock")),
         user_uid=uid,
         broker_reload_url=os.environ.get("TOOLYARD_BROKER_RELOAD_URL") or None,
         broker_reload_token_file=path_env("TOOLYARD_BROKER_RELOAD_TOKEN_FILE"),

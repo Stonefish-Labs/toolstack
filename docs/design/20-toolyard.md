@@ -92,6 +92,7 @@ different vault/item.
 | `TOOLYARD_TOOLS_DIR` | Tool definitions, usually `/home/admin/.local/share/toolstack/tools` |
 | `TOOLYARD_STATE_DIR` | Toolyard audit/state directory, default `${XDG_STATE_HOME:-~/.local/state}/toolstack` |
 | `TOOLYARD_RUNTIME_DIR` | Runtime sockets, usually `/run/toolstack/toolyardd` |
+| `TOOLYARD_CONTROL_SOCKET` | Local toolyardd control socket, default `/run/toolstack/toolyardd/control.sock` |
 | `TOOLYARD_BROKER_RELOAD_URL` | Broker registry reload endpoint |
 | `TOOLYARD_BROKER_RELOAD_TOKEN_FILE` | Broker token for registry reload |
 

@@ -24,6 +24,7 @@ toolyardd.service
   -> fetches initial secrets from Infisical
   -> injects secret files into container tmpfs at /run/secrets
   -> exposes per-tool writable-secret socket at /run/toolyard/secrets.sock
+  -> exposes operator lifecycle control at /run/toolstack/toolyardd/control.sock
 ```
 
 No Infisical credential is mounted into a tool container. Tool containers get only
@@ -251,7 +252,7 @@ cp -a /home/admin/toolstack/tools/time-mcp /home/admin/.local/share/toolstack/to
 which callers can access each operation. If descriptor files are copied, moved,
 or edited outside a Toolyard lifecycle command, use Broker Panel's "Reload Tool
 Registry" action so the broker sees the current tool root. For container
-lifecycle changes, use Toolyard:
+lifecycle changes, use the Toolyard section in Broker Panel or the Toolyard CLI:
 
 ```bash
 cd /home/admin/toolstack/toolyard

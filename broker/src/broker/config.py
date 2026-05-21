@@ -25,6 +25,7 @@ class Config:
     bind_addr: str = "127.0.0.1:8765"
     state_dir: Path = field(default_factory=default_state_dir)
     tools_dir: Path = field(default_factory=lambda: Path("./tools"))
+    toolyard_control_socket: Path = Path("/run/toolstack/toolyardd/control.sock")
     approval_timeout_seconds: int = 86400
     grant_default_ttl_seconds: int = 3600
     allow_unknown_tools: bool = False
@@ -70,6 +71,12 @@ def load_config() -> Config:
         "bind_addr": os.environ.get("BROKER_BIND_ADDR", "127.0.0.1:8765"),
         "state_dir": Path(os.environ.get("BROKER_STATE_DIR", default_state_dir())),
         "tools_dir": Path(os.environ.get("BROKER_TOOLS_DIR", "./tools")),
+        "toolyard_control_socket": Path(
+            os.environ.get(
+                "BROKER_TOOLYARD_CONTROL_SOCKET",
+                "/run/toolstack/toolyardd/control.sock",
+            )
+        ),
         "approval_timeout_seconds": int(
             os.environ.get("BROKER_APPROVAL_TIMEOUT_SECONDS", "86400")
         ),

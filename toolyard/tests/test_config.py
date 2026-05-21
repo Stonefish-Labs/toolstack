@@ -22,6 +22,13 @@ def test_toolyard_state_dir_env_overrides_xdg_default(monkeypatch, tmp_path):
     assert load_config().state_dir == override
 
 
+def test_toolyard_control_socket_env(monkeypatch, tmp_path):
+    socket_path = tmp_path / "toolyard.sock"
+    monkeypatch.setenv("TOOLYARD_CONTROL_SOCKET", str(socket_path))
+
+    assert load_config().control_socket == socket_path
+
+
 def test_infisical_credentials_dir_defaults_to_xdg_config_home(monkeypatch, tmp_path):
     config_home = tmp_path / "xdg-config"
     monkeypatch.setenv("XDG_CONFIG_HOME", str(config_home))

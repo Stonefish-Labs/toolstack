@@ -23,6 +23,33 @@ from broker.signing import make_signature_headers
 from tests.conftest import create_test_caller
 
 
+class FakeToolyardClient:
+    def __init__(self):
+        self.actions: list[tuple[str, str]] = []
+
+    async def list_tools(self):
+        return {
+            "tools": [
+                {
+                    "id": "music",
+                    "enabled": True,
+                    "running": True,
+                    "healthy": None,
+                    "host_port": 5200,
+                    "container_id": "abc123",
+                    "image_id": "music:latest",
+                }
+            ]
+        }
+
+    async def control_tool(self, tool_id: str, action: str):
+        self.actions.append((tool_id, action))
+        return {"action": action, "tool": {"id": tool_id, "running": action != "stop"}}
+
+    async def aclose(self):
+        pass
+
+
 @pytest.fixture
 def app_client(tmp_path):
     """Create a test app with TestClient."""
@@ -35,7 +62,7 @@ def app_client(tmp_path):
         allow_unknown_tools=True,
     )
     (tmp_path / "tools").mkdir(exist_ok=True)
-    app = create_app(config, SyntheticDispatcher())
+    app = create_app(config, SyntheticDispatcher(), toolyard_client=FakeToolyardClient())
 
     with TestClient(app) as client:
         yield client, config
@@ -97,15 +124,16 @@ operations:
         grant_default_ttl_seconds=3600,
         allow_unknown_tools=False,
     )
-    app = create_app(config, SyntheticDispatcher())
+    toolyard = FakeToolyardClient()
+    app = create_app(config, SyntheticDispatcher(), toolyard_client=toolyard)
 
     with TestClient(app) as client:
-        yield client, config
+        yield client, config, toolyard
 
 
 @pytest.fixture
 def admin_token(admin_app_client):
-    client, _ = admin_app_client
+    client, _, _ = admin_app_client
     from broker.api import _conn
     caller = create_test_caller(_conn, "svc.panel", "control-panel-admin")
     raw, _ = tokens.create_token_for_caller(_conn, caller["id"])
@@ -310,7 +338,7 @@ def test_admin_tools_include_declared_operation_risk(admin_token):
 
 def test_admin_tools_reload_uses_admin_policy(admin_token, admin_app_client):
     raw, client = admin_token
-    _, config = admin_app_client
+    _, config, _ = admin_app_client
     notes_dir = config.tools_dir / "notes"
     notes_dir.mkdir()
     (notes_dir / "toolyard.yaml").write_text(
@@ -344,6 +372,44 @@ def test_admin_tools_reload_requires_admin_policy(agent_token):
     raw, client = agent_token
     resp = client.post(
         "/v1/admin/tools/reload",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 403
+
+
+def test_admin_toolyard_tools_list(admin_token):
+    raw, client = admin_token
+    resp = client.get(
+        "/v1/admin/toolyard/tools",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["tools"][0]["id"] == "music"
+    assert resp.json()["tools"][0]["running"] is True
+
+
+def test_admin_toolyard_tool_action_audits(admin_token, admin_app_client):
+    raw, client = admin_token
+    _, _, toolyard = admin_app_client
+    resp = client.post(
+        "/v1/admin/toolyard/tools/music/restart",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 200
+    assert toolyard.actions == [("music", "restart")]
+
+    audit_resp = client.get(
+        "/v1/audit",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert audit_resp.status_code == 200
+    assert any(event["kind"] == "toolyard.restart" for event in audit_resp.json()["events"])
+
+
+def test_admin_toolyard_action_requires_admin_policy(agent_token):
+    raw, client = agent_token
+    resp = client.post(
+        "/v1/admin/toolyard/tools/music/restart",
         headers={"Authorization": f"Bearer {raw}"},
     )
     assert resp.status_code == 403

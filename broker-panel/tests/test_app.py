@@ -37,6 +37,7 @@ class FakeBroker:
             "broker_ops": ["broker.audit"],
             "auto_grant_ttl_seconds": 3600,
         }
+        self.toolyard_actions: list[tuple[str, str]] = []
 
     async def get_tools(self):
         return self.tools
@@ -51,6 +52,23 @@ class FakeBroker:
             ],
         }
         return {"reloaded": True, "tool_count": len(self.tools)}
+
+    async def get_toolyard_tools(self):
+        return [
+            {
+                "id": "music",
+                "enabled": True,
+                "running": True,
+                "healthy": None,
+                "host_port": 5200,
+                "container_id": "abc123",
+                "image_id": "music:latest",
+            }
+        ]
+
+    async def control_toolyard_tool(self, tool_id: str, action: str):
+        self.toolyard_actions.append((tool_id, action))
+        return {"action": action, "tool": {"id": tool_id, "running": action != "stop"}}
 
     async def get_callers(self):
         return [{"id": 1, "name": "agent.kira", "revoked_at": None}]
@@ -123,6 +141,8 @@ def test_login_and_dashboard_render(tmp_path):
     assert response.status_code == 200
     assert "agent.kira" in response.text
     assert "music" in response.text
+    assert "Toolyard" in response.text
+    assert "abc123" in response.text
 
 
 def test_create_caller_shows_one_time_token(tmp_path):
@@ -161,6 +181,24 @@ def test_reload_tools_refreshes_dashboard(tmp_path):
     assert broker.reloads == 1
     assert "Reloaded tool registry: 2 tool(s)" in response.text
     assert "notes" in response.text
+
+
+def test_toolyard_action_posts_to_broker(tmp_path):
+    broker = FakeBroker()
+    app = create_app(_config(tmp_path), broker=broker)
+    with TestClient(app) as client:
+        client.post(
+            "/login",
+            content="username=admin&password=secret",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        response = client.post(
+            "/toolyard/tools/music/restart",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    assert response.status_code == 200
+    assert broker.toolyard_actions == [("music", "restart")]
+    assert "Toolyard restart requested for music" in response.text
 
 
 def test_caller_policy_save_posts_per_operation_payload(tmp_path):

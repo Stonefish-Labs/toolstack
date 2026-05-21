@@ -58,6 +58,9 @@ admin API payloads, but the stored policy only needs to retain enabled
 The admin API also exposes registry reload for Broker Panel under
 `broker.admin.tools.write`. This is the operator-facing equivalent of the
 narrow `broker.registry.reload` service hook used by Toolyard.
+Broker Panel also reaches Toolyard lifecycle controls through broker admin
+endpoints, so start/stop/restart actions are authorized and audited by the
+broker before crossing the local Toolyard control socket.
 
 ## HTTP Surface
 

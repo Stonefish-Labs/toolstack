@@ -38,6 +38,7 @@ export TOOLYARD_INFISICAL_CREDENTIALS_DIR=/home/admin/.config/toolstack/infisica
 export TOOLYARD_TOOLS_DIR=/home/admin/.local/share/toolstack/tools
 export TOOLYARD_STATE_DIR=/home/admin/.local/state/toolstack
 export TOOLYARD_RUNTIME_DIR=/run/toolstack/toolyardd
+export TOOLYARD_CONTROL_SOCKET=/run/toolstack/toolyardd/control.sock
 export TOOLYARD_BROKER_RELOAD_URL=http://127.0.0.1:8765/v1/registry/reload
 export TOOLYARD_BROKER_RELOAD_TOKEN_FILE=/home/admin/.config/toolstack/tokens/broker-registry-admin.token
 ```

@@ -37,6 +37,7 @@ from broker.lifecycle import (
 from broker.models import ActionRequest, Caller, RequestStatus
 from broker.signing import SignatureError, verify_signature
 from broker.timeouts import run_reaper
+from broker.toolyard_client import ToolyardControlClient, ToolyardControlError
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ _conn: sqlite3.Connection | None = None
 _config: Config | None = None
 _dispatcher: Dispatcher | None = None
 _http_client: httpx.AsyncClient | None = None
+_toolyard_client: ToolyardControlClient | None = None
 _signature_nonces: dict[str, int] = {}
 
 
@@ -76,6 +78,11 @@ def get_dispatcher() -> Dispatcher:
 def get_http_client() -> httpx.AsyncClient:
     assert _http_client is not None
     return _http_client
+
+
+def get_toolyard_client() -> ToolyardControlClient:
+    assert _toolyard_client is not None
+    return _toolyard_client
 
 
 def _build_default_dispatcher(
@@ -355,12 +362,16 @@ def _policy_from_body(body: AdminCallerPolicyBody) -> dict[str, Any]:
 
 # ── App factory ──────────────────────────────────────────────────────
 
-def create_app(config: Config | None = None, dispatcher: Dispatcher | None = None) -> FastAPI:
+def create_app(
+    config: Config | None = None,
+    dispatcher: Dispatcher | None = None,
+    toolyard_client: ToolyardControlClient | None = None,
+) -> FastAPI:
     """Create and configure the FastAPI application."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        global _conn, _config, _dispatcher, _http_client
+        global _conn, _config, _dispatcher, _http_client, _toolyard_client
 
         # Use provided or load from env
         if config is not None:
@@ -374,6 +385,7 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
 
         # Wire the dispatcher: explicit param (tests) > config-driven default
         _dispatcher = dispatcher or _build_default_dispatcher(_config, _http_client)
+        _toolyard_client = toolyard_client or ToolyardControlClient(_config.toolyard_control_socket)
 
         # Initialize DB
         _config.state_dir.mkdir(parents=True, exist_ok=True)
@@ -401,6 +413,9 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
             pass
         if _http_client:
             await _http_client.aclose()
+        if _toolyard_client and toolyard_client is None:
+            await _toolyard_client.aclose()
+        _toolyard_client = None
         if _conn:
             _conn.close()
 
@@ -666,6 +681,36 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
     async def admin_reload_tools(caller: Caller = Depends(require_auth)):
         _require_admin(caller, "tools.write")
         return _reload_registry(caller)
+
+    @app.get("/v1/admin/toolyard/tools")
+    async def admin_list_toolyard_tools(caller: Caller = Depends(require_auth)):
+        _require_admin(caller, "tools.read")
+        try:
+            return await get_toolyard_client().list_tools()
+        except ToolyardControlError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+    @app.post("/v1/admin/toolyard/tools/{tool_id}/{action}")
+    async def admin_control_toolyard_tool(
+        tool_id: str,
+        action: str,
+        caller: Caller = Depends(require_auth),
+    ):
+        if action not in {"start", "stop", "restart", "rebuild"}:
+            raise HTTPException(status_code=400, detail="unsupported toolyard action")
+        _require_admin(caller, "tools.write")
+        try:
+            result = await get_toolyard_client().control_tool(tool_id, action)
+        except ToolyardControlError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+        audit.record(
+            get_conn(), f"toolyard.{action}",
+            caller_id=caller.id,
+            tool=tool_id,
+            op=action,
+            detail=result,
+        )
+        return result
 
     @app.get("/v1/admin/callers")
     async def admin_list_callers(
