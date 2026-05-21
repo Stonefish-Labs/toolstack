@@ -13,6 +13,7 @@ class FakeBroker:
     def __init__(self):
         self.created_callers: list[str] = []
         self.saved_policies: list[tuple[str, dict]] = []
+        self.reloads = 0
         self.tools = {
             "music": {
                 "id": "music",
@@ -39,6 +40,17 @@ class FakeBroker:
 
     async def get_tools(self):
         return self.tools
+
+    async def reload_tools(self):
+        self.reloads += 1
+        self.tools["notes"] = {
+            "id": "notes",
+            "description": "Note lookup",
+            "operations": [
+                {"op": "list_notes", "risk": "read", "description": "List notes"},
+            ],
+        }
+        return {"reloaded": True, "tool_count": len(self.tools)}
 
     async def get_callers(self):
         return [{"id": 1, "name": "agent.kira", "revoked_at": None}]
@@ -130,6 +142,25 @@ def test_create_caller_shows_one_time_token(tmp_path):
     assert response.status_code == 200
     assert "raw-token" in response.text
     assert broker.created_callers == ["agent.new"]
+
+
+def test_reload_tools_refreshes_dashboard(tmp_path):
+    broker = FakeBroker()
+    app = create_app(_config(tmp_path), broker=broker)
+    with TestClient(app) as client:
+        client.post(
+            "/login",
+            content="username=admin&password=secret",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        response = client.post(
+            "/tools/reload",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    assert response.status_code == 200
+    assert broker.reloads == 1
+    assert "Reloaded tool registry: 2 tool(s)" in response.text
+    assert "notes" in response.text
 
 
 def test_caller_policy_save_posts_per_operation_payload(tmp_path):

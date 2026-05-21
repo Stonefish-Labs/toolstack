@@ -243,6 +243,17 @@ def _require_admin(caller: Caller, op_name: str) -> None:
     _require_broker_op(caller, f"admin.{op_name}")
 
 
+def _reload_registry(caller: Caller) -> dict[str, Any]:
+    cfg = get_config()
+    new_registry = registry.load_registry(cfg.tools_dir)
+    audit.record(
+        get_conn(), "registry.reload",
+        caller_id=caller.id,
+        detail={"tool_count": len(new_registry)},
+    )
+    return {"reloaded": True, "tool_count": len(new_registry)}
+
+
 def _tool_operations() -> dict[str, dict[str, dict[str, str]]]:
     tools = registry.list_tools()
     result: dict[str, dict[str, dict[str, str]]] = {}
@@ -642,14 +653,7 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
         Requires ``broker.registry.reload`` in the caller's policy.
         """
         _require_broker_op(caller, "registry.reload")
-        cfg = get_config()
-        new_registry = registry.load_registry(cfg.tools_dir)
-        audit.record(
-            get_conn(), "registry.reload",
-            caller_id=caller.id,
-            detail={"tool_count": len(new_registry)},
-        )
-        return {"reloaded": True, "tool_count": len(new_registry)}
+        return _reload_registry(caller)
 
     # ── Broker admin ────────────────────────────────────────────────
 
@@ -657,6 +661,11 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
     async def admin_list_tools(caller: Caller = Depends(require_auth)):
         _require_admin(caller, "tools.read")
         return {"tools": _admin_tool_payload()}
+
+    @app.post("/v1/admin/tools/reload")
+    async def admin_reload_tools(caller: Caller = Depends(require_auth)):
+        _require_admin(caller, "tools.write")
+        return _reload_registry(caller)
 
     @app.get("/v1/admin/callers")
     async def admin_list_callers(

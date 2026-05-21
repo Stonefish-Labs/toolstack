@@ -55,6 +55,10 @@ admin API payloads, but the stored policy only needs to retain enabled
 - `broker.approval_messages.read`
 - `broker.approval_messages.write`
 
+The admin API also exposes registry reload for Broker Panel under
+`broker.admin.tools.write`. This is the operator-facing equivalent of the
+narrow `broker.registry.reload` service hook used by Toolyard.
+
 ## HTTP Surface
 
 All endpoints require `Authorization: Bearer <token>` except `GET /v1/health`.

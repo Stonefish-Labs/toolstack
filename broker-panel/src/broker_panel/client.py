@@ -29,6 +29,9 @@ class BrokerClient:
     async def get_tools(self) -> dict[str, Any]:
         return (await self._request("GET", "/v1/admin/tools"))["tools"]
 
+    async def reload_tools(self) -> dict[str, Any]:
+        return await self._request("POST", "/v1/admin/tools/reload")
+
     async def get_callers(self) -> list[dict[str, Any]]:
         return (await self._request("GET", "/v1/admin/callers"))["callers"]
 

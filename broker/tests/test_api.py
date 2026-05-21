@@ -308,6 +308,47 @@ def test_admin_tools_include_declared_operation_risk(admin_token):
     ]
 
 
+def test_admin_tools_reload_uses_admin_policy(admin_token, admin_app_client):
+    raw, client = admin_token
+    _, config = admin_app_client
+    notes_dir = config.tools_dir / "notes"
+    notes_dir.mkdir()
+    (notes_dir / "toolyard.yaml").write_text(
+        """
+id: notes
+type: rest
+entrypoint:
+  image: notes:latest
+  port: 5300
+operations:
+  - { op: list_notes, risk: read }
+""",
+        encoding="utf-8",
+    )
+
+    resp = client.post(
+        "/v1/admin/tools/reload",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["tool_count"] == 2
+    tools = client.get(
+        "/v1/admin/tools",
+        headers={"Authorization": f"Bearer {raw}"},
+    ).json()["tools"]
+    assert "notes" in tools
+
+
+def test_admin_tools_reload_requires_admin_policy(agent_token):
+    raw, client = agent_token
+    resp = client.post(
+        "/v1/admin/tools/reload",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 403
+
+
 def test_admin_caller_policy_roundtrip_structured_operation_rules(admin_token):
     raw, client = admin_token
     create = client.post(

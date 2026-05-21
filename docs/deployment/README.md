@@ -248,7 +248,10 @@ cp -a /home/admin/toolstack/tools/time-mcp /home/admin/.local/share/toolstack/to
 ```
 
 `toolyardd.service` starts all enabled tools at boot. Use Broker Panel to choose
-which callers can access each operation. For manual lifecycle work:
+which callers can access each operation. If descriptor files are copied, moved,
+or edited outside a Toolyard lifecycle command, use Broker Panel's "Reload Tool
+Registry" action so the broker sees the current tool root. For container
+lifecycle changes, use Toolyard:
 
 ```bash
 cd /home/admin/toolstack/toolyard

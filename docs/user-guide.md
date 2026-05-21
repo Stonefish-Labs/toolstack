@@ -263,7 +263,8 @@ adding a tool should be "drop a folder, pick an entry point, run one command."
 
 If you change tool code, `toolyard restart <id>` rebuilds the image and bounces
 the container. If you change `toolyard.yaml`, the broker registry also needs a
-reload (the toolyard pings it automatically via `TOOLYARD_BROKER_RELOAD_URL`).
+reload. Toolyard pings it automatically via `TOOLYARD_BROKER_RELOAD_URL` during
+lifecycle commands; otherwise use Broker Panel's "Reload Tool Registry" action.
 
 ### Tool checklist (cheat sheet)
 

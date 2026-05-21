@@ -70,6 +70,22 @@ def create_app(config: Config | None = None, broker: Any | None = None) -> FastA
             return RedirectResponse("/login", status_code=303)
         return await _dashboard_response(request, user=user)
 
+    @app.post("/tools/reload")
+    async def reload_tools(request: Request):
+        user = _current_user(request)
+        if not user:
+            return RedirectResponse("/login", status_code=303)
+        try:
+            result = await request.app.state.broker.reload_tools()
+            count = result.get("tool_count", 0)
+            banner = (
+                f"Reloaded tool registry: {_esc(count)} tool(s). "
+                "Restart changed containers with Toolyard when needed."
+            )
+            return await _dashboard_response(request, user=user, banner=banner)
+        except BrokerAPIError as exc:
+            return await _dashboard_response(request, user=user, error=exc.detail)
+
     @app.post("/callers")
     async def create_caller(request: Request):
         user = _current_user(request)
@@ -212,6 +228,9 @@ async def _dashboard_response(
     body.append(
         """
 <section class="toolbar">
+  <form method="post" action="/tools/reload" class="inline-form">
+    <button type="submit">Reload Tool Registry</button>
+  </form>
   <form method="post" action="/callers" class="inline-form">
     <input name="name" placeholder="caller name" required>
     <button type="submit">Create Caller</button>

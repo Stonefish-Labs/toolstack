@@ -8,6 +8,8 @@ The panel manages concrete callers. From the caller policy screen you can
 enable or review individual tool operations, see operation descriptions from
 `toolyard.yaml`, grant broker control ops, revoke callers, and refresh a
 caller's token by revoking the active token set and issuing a new one-time token.
+The dashboard can also reload the broker's tool registry after descriptor files
+move or change. Tool containers still need lifecycle changes through Toolyard.
 
 ## Configuration
 
