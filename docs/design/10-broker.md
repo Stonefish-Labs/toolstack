@@ -13,8 +13,8 @@ operation is allowed, sent to review, or denied.
   approve/reject decisions.
 - Forward approved calls to REST or MCP HTTP tools.
 - Audit token, policy, request, approval, dispatch, and registry events.
-- Read `tools/<id>/toolyard.yaml` to know tool ports, risks, and operation
-  descriptions.
+- Read `toolyard.yaml` files from the configured tools root to know tool ports,
+  risks, and operation descriptions.
 
 The broker does not execute tool code and does not resolve downstream tool
 secrets. Toolyard resolves Infisical-backed workload secrets before containers

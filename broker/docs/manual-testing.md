@@ -7,7 +7,9 @@ Step-by-step verification of the broker service.
 ```bash
 cd broker/
 source .venv/bin/activate
-export BROKER_TOOLS_DIR=../tools
+export BROKER_TOOLS_DIR=/home/admin/.local/share/toolstack/tools
+install -d -m 0755 "$BROKER_TOOLS_DIR"
+cp -a ../tools/hello-rest "$BROKER_TOOLS_DIR/"
 ```
 
 ## 1. Setup

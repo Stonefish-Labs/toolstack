@@ -38,7 +38,7 @@ service's secret store.
 |---|---|---|
 | `BROKER_BIND_ADDR` | `127.0.0.1:8765` | HTTP listener |
 | `BROKER_STATE_DIR` | `${XDG_STATE_HOME:-~/.local/state}/toolstack/broker` | SQLite database location |
-| `BROKER_TOOLS_DIR` | `./tools` | directory containing `<tool>/toolyard.yaml` descriptors |
+| `BROKER_TOOLS_DIR` | `./tools` | directory containing `<tool>/toolyard.yaml` descriptors; deployment should set this to the same external root as `TOOLYARD_TOOLS_DIR` |
 | `BROKER_APPROVAL_TIMEOUT_SECONDS` | `86400` | Pending to expired timeout |
 | `BROKER_GRANT_DEFAULT_TTL_SECONDS` | `3600` | Default grant duration |
 | `BROKER_ALLOW_UNKNOWN_TOOLS` | `false` | Accept unknown tool names in dev |

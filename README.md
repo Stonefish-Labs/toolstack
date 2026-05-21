@@ -72,12 +72,12 @@ path.
   evaluates caller-owned policy, dispatches approved actions, and records audit
   events.
 - [`toolyard/`](toolyard/) is the Docker lifecycle runner and per-tool secret
-  boundary. It reads `tools/<id>/toolyard.yaml`, starts enabled tools, and
+  boundary. It reads the configured tools root, starts enabled tools, and
   injects resolved secrets into container tmpfs.
 - [`discord-approver/`](discord-approver/) is the human approval surface for
   requests that policy marks as review-required.
-- [`tools/`](tools/) contains small example tool containers. Current examples
-  are `hello-rest` and `time-mcp`.
+- [`tools/`](tools/) contains public example tool containers only. Deployed or
+  private tools should live in the configured tools root outside the checkout.
 - Infisical Universal Auth credentials live in host-side env files and are
   consumed by Toolyard at workload start.
 - [`docs/`](docs/) contains the thesis, architecture, component specs,

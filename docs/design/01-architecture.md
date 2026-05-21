@@ -59,7 +59,7 @@ Owns:
 - `callers`, `tokens` — agent identity, bearer tokens (hashed)
 - `action_requests`, `approvals`, `grants` — request lifecycle
 - `audit_events` — full action history
-- The runtime registry of which `tool_id` resolves to which `127.0.0.1:port` (read from `tools/<id>/toolyard.yaml`)
+- The runtime registry of which `tool_id` resolves to which `127.0.0.1:port` (read from the configured tools root)
 
 HTTP surface:
 - `POST /v1/actions/<tool>.<op>` — request a REST action
@@ -79,7 +79,8 @@ The broker does NOT: execute tool code, resolve upstream secrets, parse MCP prot
 
 Role: tool-server lifecycle, on-disk registry, and per-tool secret resolution.
 
-Source of truth: `tools/<id>/toolyard.yaml` files. Each definition specifies:
+Source of truth: `toolyard.yaml` files under the configured tools root. Each
+definition specifies:
 
 ```yaml
 id: media
@@ -210,7 +211,7 @@ the active design docs.
 ## Storage summary
 
 - **Broker**: `${XDG_STATE_HOME:-~/.local/state}/toolstack/broker/broker.sqlite3` — callers, tokens, action_requests, approvals, approval UI message mappings, grants, audit_events.
-- **Toolyard**: filesystem-driven. `tools/<id>/toolyard.yaml` is canonical. secret values are injected into container tmpfs and are not persisted on the host. `${XDG_STATE_HOME:-~/.local/state}/toolstack/toolyard-audit.jsonl` records tool starts/stops and writable-secret updates.
+- **Toolyard**: filesystem-driven. `<tools-root>/<id>/toolyard.yaml` is canonical. secret values are injected into container tmpfs and are not persisted on the host. `${XDG_STATE_HOME:-~/.local/state}/toolstack/toolyard-audit.jsonl` records tool starts/stops and writable-secret updates.
 - **Discord bot**: no local persistent state; it stores `request_id ↔ message_id` mappings through the broker.
 - **Per-tool**: each tool owns its own data dir if persistence is needed (mounted volume per the tool's `toolyard.yaml`).
 

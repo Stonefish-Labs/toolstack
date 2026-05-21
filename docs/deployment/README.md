@@ -20,7 +20,7 @@ Operator on tailnet
        -> broker admin API on 127.0.0.1:8765
 
 toolyardd.service
-  -> reads tools/<id>/toolyard.yaml
+  -> reads /home/admin/.local/share/toolstack/tools/<id>/toolyard.yaml
   -> fetches initial secrets from Infisical
   -> injects secret files into container tmpfs at /run/secrets
   -> exposes per-tool writable-secret socket at /run/toolyard/secrets.sock
@@ -53,6 +53,7 @@ install -d -m 0700 /home/admin/.config/toolstack
 install -d -m 0700 /home/admin/.config/toolstack/infisical
 install -d -m 0700 /home/admin/.config/toolstack/tokens
 install -d -m 0700 /home/admin/.local/state/toolstack/broker
+install -d -m 0755 /home/admin/.local/share/toolstack/tools
 ```
 
 Token files used by the deployment:
@@ -101,6 +102,7 @@ install -m 0600 docs/deployment/env/broker-panel.env.example /home/admin/.config
 Edit the env files and set:
 
 - `BROKER_PUBLIC_URL=https://broker.your-tailnet.ts.net`
+- `BROKER_TOOLS_DIR` and `TOOLYARD_TOOLS_DIR` to the same tools root, usually `/home/admin/.local/share/toolstack/tools`
 - `TOOLYARD_INFISICAL_HOST=<your Infisical URL>`
 - `TOOLYARD_INFISICAL_ENVIRONMENT=<environment slug>`
 - `APPROVER_DISCORD_CHANNEL_ID=<your Discord channel ID>`
@@ -231,13 +233,22 @@ Both should return `{"ok": true}`.
 
 ## 8. First Tool Registration
 
-The first two example tools are already present:
+The repo includes two public example tools:
 
 - `/home/admin/toolstack/tools/hello-rest/toolyard.yaml`
 - `/home/admin/toolstack/tools/time-mcp/toolyard.yaml`
 
-They are enabled and policy-registered in `home-default` and `readonly`.
-`toolyardd.service` starts all enabled tools at boot. For manual lifecycle work:
+The deployment tool root is outside the git checkout. Copy or maintain tools
+there, then point both broker and toolyard at that same root:
+
+```bash
+install -d -m 0755 /home/admin/.local/share/toolstack/tools
+cp -a /home/admin/toolstack/tools/hello-rest /home/admin/.local/share/toolstack/tools/
+cp -a /home/admin/toolstack/tools/time-mcp /home/admin/.local/share/toolstack/tools/
+```
+
+`toolyardd.service` starts all enabled tools at boot. Use Broker Panel to choose
+which callers can access each operation. For manual lifecycle work:
 
 ```bash
 cd /home/admin/toolstack/toolyard

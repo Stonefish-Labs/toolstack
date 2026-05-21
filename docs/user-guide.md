@@ -157,10 +157,12 @@ adding a tool should be "drop a folder, pick an entry point, run one command."
 
 ### Recipe
 
-1. **Create the folder** under `tools/<id>/`:
+1. **Create the folder** under the configured tools root:
 
    ```bash
-   cd /home/admin/toolstack/tools
+   export TOOL_ROOT=${TOOLYARD_TOOLS_DIR:-/home/admin/.local/share/toolstack/tools}
+   install -d -m 0755 "$TOOL_ROOT"
+   cd "$TOOL_ROOT"
    mkdir my-tool && cd my-tool
    ```
 
@@ -265,8 +267,8 @@ reload (the toolyard pings it automatically via `TOOLYARD_BROKER_RELOAD_URL`).
 
 ### Tool checklist (cheat sheet)
 
-- [ ] Folder under `tools/<id>/` with `id` lowercase a-z + digits + dashes
-- [ ] `toolyard.yaml` validates (`toolyard validate tools/<id>`)
+- [ ] Folder under the configured tools root with `id` lowercase a-z + digits + dashes
+- [ ] `toolyard.yaml` validates (`toolyard validate "${TOOLYARD_TOOLS_DIR:-/home/admin/.local/share/toolstack/tools}/<id>"`)
 - [ ] Dockerfile runs as non-root (UID 10000 by default)
 - [ ] Container listens on `0.0.0.0` (toolyard binds host-side to 127.0.0.1)
 - [ ] Tool reads secrets from `/run/secrets/<name>`
@@ -502,7 +504,7 @@ curl -s -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/tokens/bro
   http://127.0.0.1:8765/v1/registry | jq '.tools | keys'
 
 # Is the file there?
-ls /home/admin/toolstack/tools/<id>/toolyard.yaml
+ls "${TOOLYARD_TOOLS_DIR:-/home/admin/.local/share/toolstack/tools}/<id>/toolyard.yaml"
 
 # Did toolyard pick it up?
 toolyard ls

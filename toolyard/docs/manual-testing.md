@@ -23,10 +23,12 @@ cd /home/admin/toolstack/toolyard
 export TOOLYARD_INFISICAL_HOST=https://infisical.internal.example:19081
 export TOOLYARD_INFISICAL_ENVIRONMENT=prod
 export TOOLYARD_INFISICAL_CREDENTIALS_DIR=/home/admin/.config/toolstack/infisical
-export TOOLYARD_TOOLS_DIR=/home/admin/toolstack/tools
+export TOOLYARD_TOOLS_DIR=/home/admin/.local/share/toolstack/tools
 export TOOLYARD_STATE_DIR=/home/admin/.local/state/toolstack
 export TOOLYARD_RUNTIME_DIR=/run/toolstack/toolyardd
-.venv/bin/toolyard validate /home/admin/toolstack/tools/hello-rest
+install -d -m 0755 "$TOOLYARD_TOOLS_DIR"
+cp -a /home/admin/toolstack/tools/hello-rest "$TOOLYARD_TOOLS_DIR/"
+.venv/bin/toolyard validate "$TOOLYARD_TOOLS_DIR/hello-rest"
 .venv/bin/toolyard secrets hello-rest
 ```
 

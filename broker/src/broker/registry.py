@@ -1,4 +1,4 @@
-"""Tool registry — reads tools/<id>/toolyard.yaml files.
+"""Tool registry — reads <tools-root>/<id>/toolyard.yaml files.
 
 Provides the broker with tool descriptors for policy (risk lookup), endpoint
 validation (does this tool exist?), and dispatcher routing (what type? what

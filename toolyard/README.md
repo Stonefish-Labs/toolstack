@@ -6,7 +6,7 @@ The `toolyard` CLI validates descriptors and performs manual lifecycle tasks;
 
 ## What toolyardd does
 
-- Reads `tools/<id>/toolyard.yaml`.
+- Reads `toolyard.yaml` files from `TOOLYARD_TOOLS_DIR`.
 - Builds or pulls one Docker image per enabled tool.
 - Starts one container per tool, bound to `127.0.0.1:<port>`.
 - Fetches initial secrets from Infisical.
@@ -19,7 +19,7 @@ No Infisical credential is mounted into tool containers.
 ## CLI
 
 ```sh
-toolyard validate ./tools/hello-rest
+toolyard validate "$TOOLYARD_TOOLS_DIR/hello-rest"
 toolyard secrets hello-rest
 toolyard ls --json
 toolyard logs hello-rest --tail 100
@@ -35,7 +35,7 @@ so the per-tool writable-secret socket remains available.
 export TOOLYARD_INFISICAL_HOST=https://infisical.internal.example:19081
 export TOOLYARD_INFISICAL_ENVIRONMENT=prod
 export TOOLYARD_INFISICAL_CREDENTIALS_DIR=/home/admin/.config/toolstack/infisical
-export TOOLYARD_TOOLS_DIR=/home/admin/toolstack/tools
+export TOOLYARD_TOOLS_DIR=/home/admin/.local/share/toolstack/tools
 export TOOLYARD_STATE_DIR=/home/admin/.local/state/toolstack
 export TOOLYARD_RUNTIME_DIR=/run/toolstack/toolyardd
 export TOOLYARD_BROKER_RELOAD_URL=http://127.0.0.1:8765/v1/registry/reload

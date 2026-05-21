@@ -1,7 +1,9 @@
 # Tool Template
 
-A tool is a self-contained folder under `tools/<id>/` containing a
-`toolyard.yaml`, a Dockerfile or image reference, and the tool code.
+A tool is a self-contained folder under the configured tools root, usually
+`$TOOLYARD_TOOLS_DIR/<id>/`, containing a `toolyard.yaml`, a Dockerfile or
+image reference, and the tool code. The repo `tools/` directory contains public
+examples, not the required deployment location.
 
 ## REST Example: hello-rest
 

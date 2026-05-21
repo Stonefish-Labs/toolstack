@@ -1,4 +1,4 @@
-"""Filesystem registry for tools/<id>/toolyard.yaml."""
+"""Filesystem registry for <tools-root>/<id>/toolyard.yaml."""
 
 from __future__ import annotations
 

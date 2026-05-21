@@ -1,12 +1,13 @@
 # Toolyard
 
 Toolyard is the Docker lifecycle layer for Toolstack tools. The long-running
-`toolyardd` process reads `tools/<id>/toolyard.yaml`, starts one Docker
-container per enabled tool, injects initial secrets from Infisical, and
-mediates allowlisted writable secret updates.
+`toolyardd` process reads `toolyard.yaml` files from the configured tools root,
+starts one Docker container per enabled tool, injects initial secrets from
+Infisical, and mediates allowlisted writable secret updates.
 
 Both the broker and toolyard read the same `toolyard.yaml` files. There is no
-separate registry service.
+separate registry service. `BROKER_TOOLS_DIR` and `TOOLYARD_TOOLS_DIR` should
+point at the same root.
 
 ## Responsibilities
 
@@ -88,7 +89,7 @@ different vault/item.
 | `TOOLYARD_INFISICAL_ENVIRONMENT` | Infisical environment slug, default `prod` |
 | `TOOLYARD_INFISICAL_CREDENTIALS_DIR` | Per-path Universal Auth credentials, default `${XDG_CONFIG_HOME:-~/.config}/toolstack/infisical` |
 | `TOOLYARD_INFISICAL_ORGANIZATION_SLUG` | Optional Infisical organization slug for Universal Auth login |
-| `TOOLYARD_TOOLS_DIR` | Tool definitions, usually `/home/admin/toolstack/tools` |
+| `TOOLYARD_TOOLS_DIR` | Tool definitions, usually `/home/admin/.local/share/toolstack/tools` |
 | `TOOLYARD_STATE_DIR` | Toolyard audit/state directory, default `${XDG_STATE_HOME:-~/.local/state}/toolstack` |
 | `TOOLYARD_RUNTIME_DIR` | Runtime sockets, usually `/run/toolstack/toolyardd` |
 | `TOOLYARD_BROKER_RELOAD_URL` | Broker registry reload endpoint |
@@ -101,7 +102,7 @@ commands. Writable tools should be run through `toolyardd` so their per-tool
 socket stays available.
 
 ```
-toolyard validate ./tools/hello-rest
+toolyard validate "$TOOLYARD_TOOLS_DIR/hello-rest"
 toolyard secrets hello-rest
 toolyard ls --json
 toolyard logs hello-rest --tail 100
