@@ -22,7 +22,7 @@ def test_hash_token_deterministic():
 
 
 def test_create_and_verify_roundtrip(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.test", "home-default")
+    caller = db.create_caller(tmp_db, "agent.test")
     raw, prefix = tokens.create_token_for_caller(tmp_db, caller["id"])
 
     assert len(prefix) == 8
@@ -31,7 +31,6 @@ def test_create_and_verify_roundtrip(tmp_db):
     assert result is not None
     assert isinstance(result, Caller)
     assert result.name == "agent.test"
-    assert result.profile == "home-default"
 
 
 def test_verify_invalid_token(tmp_db):
@@ -45,7 +44,7 @@ def test_verify_missing_bearer_prefix(tmp_db):
 
 
 def test_verify_revoked_token(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.rev", "p")
+    caller = db.create_caller(tmp_db, "agent.rev")
     raw, prefix = tokens.create_token_for_caller(tmp_db, caller["id"])
 
     # Revoke the token
@@ -57,7 +56,7 @@ def test_verify_revoked_token(tmp_db):
 
 
 def test_verify_revoked_caller(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.rc", "p")
+    caller = db.create_caller(tmp_db, "agent.rc")
     raw, _ = tokens.create_token_for_caller(tmp_db, caller["id"])
 
     # Revoke the caller
@@ -68,7 +67,7 @@ def test_verify_revoked_caller(tmp_db):
 
 
 def test_last_used_updated_on_verify(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.lu", "p")
+    caller = db.create_caller(tmp_db, "agent.lu")
     raw, _ = tokens.create_token_for_caller(tmp_db, caller["id"])
 
     h = tokens.hash_token(raw)

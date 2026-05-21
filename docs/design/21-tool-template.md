@@ -24,9 +24,9 @@ operations:
     risk: read
 ```
 
-1Password layout: vault `ToolServer`, item `hello-rest`, field `API_KEY`.
+Infisical layout: project `ToolServer`, path `/hello-rest`, key `API_KEY`.
 
-Tool code reads `/run/secrets/api_key`; it never talks to 1Password directly.
+Tool code reads `/run/secrets/api_key`; it never talks to Infisical directly.
 
 ## MCP-HTTP Example: time-mcp
 
@@ -72,22 +72,13 @@ curl --unix-socket /run/toolyard/secrets.sock \
   -d '{"value":"NEW_REFRESH_TOKEN","reason":"oauth refresh"}'
 ```
 
-Toolyardd patches exactly `ToolServer/<tool id>/REFRESH_TOKEN` unless `vault` or
-`item` override that target in the descriptor.
+Toolyardd patches exactly project `ToolServer`, path `/<tool id>`, key
+`REFRESH_TOKEN` unless `vault` or `item` override that target in the descriptor.
 
 ## Broker Registration
 
-Add the tool and operations to the appropriate broker profile, then reload:
-
-```yaml
-allowed_tools:
-  - hello-rest
-  - time-mcp
-allowed_ops:
-  - "hello-rest.greet"
-  - "time-mcp.current_time"
-  - "time-mcp.time_in"
-```
+Reload the broker registry so it sees the new `toolyard.yaml`, then enable the
+desired operations on each caller policy in Broker Panel:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/tokens/broker-registry-admin.token)" \
@@ -99,6 +90,6 @@ curl -X POST -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/token
 Tools with a broad operation surface should usually get a thin agent skill that
 calls broker actions instead of exposing every operation in the agent's default
 context. Follow [`22-agent-skill-convention.md`](22-agent-skill-convention.md)
-for the client-side pattern: broker-tool/profile config under the Toolstack XDG
-layout, a stable CLI wrapper, dependency-free broker calls, and no downstream
-credentials or service logic in the skill bundle.
+for the client-side pattern: a stable CLI wrapper, dependency-free broker
+calls, caller token config, and no downstream credentials or service logic in
+the skill bundle.

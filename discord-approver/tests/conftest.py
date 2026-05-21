@@ -13,7 +13,6 @@ def pending_request() -> Request:
     return Request(
         id=1,
         caller="agent.hermes",
-        profile="home-default",
         tool="media",
         op="skip_track",
         arguments={"device_id": "abc-123", "direction": "forward"},
@@ -30,7 +29,6 @@ def approved_request() -> Request:
     return Request(
         id=2,
         caller="agent.hermes",
-        profile="home-default",
         tool="media",
         op="skip_track",
         arguments={"device_id": "abc-123"},
@@ -47,7 +45,6 @@ def rejected_request() -> Request:
     return Request(
         id=3,
         caller="agent.hermes",
-        profile="home-default",
         tool="tasks",
         op="delete_project",
         arguments={"project_id": "999"},
@@ -64,7 +61,6 @@ def expired_request() -> Request:
     return Request(
         id=4,
         caller="agent.codex",
-        profile="home-default",
         tool="calendar",
         op="create_event",
         arguments={"title": "standup"},
@@ -79,7 +75,6 @@ def request_with_secrets() -> Request:
     return Request(
         id=5,
         caller="agent.hermes",
-        profile="home-default",
         tool="generic",
         op="call_api",
         arguments={

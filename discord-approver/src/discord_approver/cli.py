@@ -7,12 +7,11 @@ Usage: discord-approver
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from discord_approver.bot import build_bot
 from discord_approver.broker_client import HTTPBrokerClient
 from discord_approver.config import load_config
-from discord_approver.state import SqliteMessageStore
+from discord_approver.state import BrokerMessageStore
 
 
 def main() -> None:
@@ -25,13 +24,10 @@ def main() -> None:
 
     cfg = load_config()
 
-    # Ensure state directory exists
-    cfg.state_dir.mkdir(parents=True, exist_ok=True)
-
-    store = SqliteMessageStore(Path(cfg.state_dir) / "messages.sqlite3")
     broker = HTTPBrokerClient(
         cfg.broker_url, cfg.broker_token, signing_secret=cfg.broker_signing_secret
     )
+    store = BrokerMessageStore(broker)
     bot = build_bot(cfg, store, broker)
 
     logging.getLogger(__name__).info(

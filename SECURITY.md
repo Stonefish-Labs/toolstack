@@ -6,7 +6,7 @@ state stays out of source control.
 
 ## Credential Handling
 
-- Store broker, Discord, and 1Password Connect tokens in files outside the repo.
+- Store broker tokens, Discord tokens, and Infisical machine identity files outside the repo.
 - Keep token files mode `0600` where possible.
 - Use the checked-in `.env.example` files only as templates.
 - Rotate any token that was copied into logs, shell history, chat, or a local
@@ -15,7 +15,7 @@ state stays out of source control.
 ## Known Pre-Publish Rotation
 
 Before the first public publish, this working tree contained local Discord and
-1Password Connect credentials in ignored files. Those files are removed from the
+secret-provider credentials in ignored files. Those files are removed from the
 repository contents, but the credentials should still be rotated before reuse.
 
 ## Reporting

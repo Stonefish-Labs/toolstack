@@ -9,14 +9,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import sqlite3
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from broker import audit, db, registry, tokens, policy
 from broker.approval import approve_request, reject_request
@@ -121,6 +122,29 @@ class RejectBody(BaseModel):
     reason: str | None = None
 
 
+class ApprovalMessageBody(BaseModel):
+    message_id: int
+    last_status: str
+
+
+PolicyEffect = Literal["allow", "review", "deny"]
+
+
+class AdminCallerPolicyToolBody(BaseModel):
+    operations: dict[str, PolicyEffect] = Field(default_factory=dict)
+
+
+class AdminCallerPolicyBody(BaseModel):
+    tools: dict[str, AdminCallerPolicyToolBody] = Field(default_factory=dict)
+    broker_ops: list[str] = Field(default_factory=list)
+    auto_grant_ttl_seconds: int | None = Field(default=None, ge=0)
+
+
+class AdminCreateCallerBody(BaseModel):
+    name: str
+    policy: AdminCallerPolicyBody | None = None
+
+
 # ── Auth dependency ──────────────────────────────────────────────────
 
 async def require_auth(
@@ -138,7 +162,12 @@ async def require_auth(
 
 async def _require_approver_signature(request: Request, caller: Caller) -> None:
     cfg = get_config()
-    if caller.profile != "approver" or not cfg.approver_signing_secret:
+    if not cfg.approver_signing_secret:
+        return
+    caller_policy = policy.caller_policy(get_conn(), caller.id)
+    can_approve = policy.caller_allows_broker_op(caller_policy, "approve")
+    can_reject = policy.caller_allows_broker_op(caller_policy, "reject")
+    if not (can_approve or can_reject):
         return
 
     body = await request.body()
@@ -165,18 +194,13 @@ def _request_target(request: Request) -> str:
 
 
 def _require_broker_op(caller: Caller, op_name: str) -> None:
-    """Check that the caller's profile allows a broker.* operation."""
-    profile_data = policy.get_profile(caller.profile)
-    if profile_data is None:
-        raise HTTPException(status_code=403, detail="profile not found")
-
-    allowed = profile_data.get("allowed_ops", [])
-    import fnmatch
+    """Check that the caller's policy allows a broker.* operation."""
     full_op = f"broker.{op_name}"
-    if not any(fnmatch.fnmatch(full_op, p) for p in allowed):
+    caller_policy = policy.caller_policy(get_conn(), caller.id)
+    if not policy.caller_allows_broker_op(caller_policy, op_name):
         raise HTTPException(
             status_code=403,
-            detail=f"profile '{caller.profile}' does not allow '{full_op}'",
+            detail=f"caller '{caller.name}' does not allow '{full_op}'",
         )
 
 
@@ -188,6 +212,134 @@ def _serialize_request(req: ActionRequest) -> dict[str, Any]:
     The bot expects these exact fields at the top level.
     """
     return req.model_dump(exclude_none=False)
+
+
+def _serialize_approval_message(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "request_id": row["request_id"],
+        "surface": row["surface"],
+        "message_id": row["message_id"],
+        "last_status": row["last_status"],
+        "posted_at": row["posted_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def _public_caller(row: dict[str, Any]) -> dict[str, Any]:
+    return dict(row)
+
+
+_CALLER_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+_BROKER_OP_RE = re.compile(r"^broker\.[A-Za-z0-9_.:-]+(?:\*)?$")
+
+
+def _validate_caller_name(name: str) -> str:
+    if not _CALLER_NAME_RE.fullmatch(name):
+        raise HTTPException(status_code=400, detail="invalid caller name")
+    return name
+
+
+def _require_admin(caller: Caller, op_name: str) -> None:
+    _require_broker_op(caller, f"admin.{op_name}")
+
+
+def _tool_operations() -> dict[str, dict[str, dict[str, str]]]:
+    tools = registry.list_tools()
+    result: dict[str, dict[str, dict[str, str]]] = {}
+    for tool_id, desc in tools.items():
+        result[tool_id] = {}
+        for operation in desc.operations:
+            if not isinstance(operation, dict):
+                continue
+            op = operation.get("op")
+            if not isinstance(op, str) or not op:
+                continue
+            risk = operation.get("risk")
+            description = operation.get("description")
+            result[tool_id][op] = {
+                "risk": risk if risk in {"read", "write", "destructive"} else "write",
+                "description": description if isinstance(description, str) else "",
+            }
+    return result
+
+
+def _admin_tool_payload() -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for tool_id, desc in sorted(registry.list_tools().items()):
+        operations = []
+        for operation in desc.operations:
+            if not isinstance(operation, dict):
+                continue
+            op = operation.get("op")
+            if not isinstance(op, str) or not op:
+                continue
+            risk = operation.get("risk")
+            description = operation.get("description")
+            operations.append({
+                "op": op,
+                "risk": risk if risk in {"read", "write", "destructive"} else "write",
+                "description": description if isinstance(description, str) else "",
+            })
+        payload[tool_id] = {
+            "id": desc.id,
+            "type": desc.type,
+            "description": desc.description,
+            "enabled": desc.enabled,
+            "port": desc.port,
+            "operations": operations,
+        }
+    return payload
+
+
+def _structured_caller_policy(caller_row: dict[str, Any], policy_data: dict[str, Any]) -> dict[str, Any]:
+    policy_data = policy.normalize_policy(policy_data)
+    tools_payload: dict[str, Any] = {}
+    current_tools = policy_data.get("tools") or {}
+    for tool_id, operations in sorted(_tool_operations().items()):
+        current_ops = current_tools.get(tool_id, {}).get("operations", {})
+        tools_payload[tool_id] = {
+            "operations": {
+                op: current_ops.get(op, "deny")
+                if current_ops.get(op, "deny") in {"allow", "review", "deny"}
+                else "deny"
+                for op in sorted(operations)
+            }
+        }
+    return {
+        "caller": caller_row["name"],
+        "tools": tools_payload,
+        "broker_ops": policy_data.get("broker_ops") or [],
+        "auto_grant_ttl_seconds": policy_data.get("auto_grant_ttl_seconds"),
+    }
+
+
+def _policy_from_body(body: AdminCallerPolicyBody) -> dict[str, Any]:
+    known = _tool_operations()
+    tools: dict[str, dict[str, dict[str, str]]] = {}
+
+    for tool_id, tool_policy in sorted(body.tools.items()):
+        if tool_id not in known:
+            raise HTTPException(status_code=400, detail=f"unknown tool: {tool_id}")
+        operations: dict[str, str] = {}
+        for op, effect in sorted(tool_policy.operations.items()):
+            if op not in known[tool_id]:
+                raise HTTPException(status_code=400, detail=f"unknown operation: {tool_id}.{op}")
+            if effect in {"allow", "review"}:
+                operations[op] = effect
+        if operations:
+            tools[tool_id] = {"operations": operations}
+
+    broker_ops: list[str] = []
+    for broker_op in body.broker_ops:
+        if not _BROKER_OP_RE.fullmatch(broker_op):
+            raise HTTPException(status_code=400, detail=f"invalid broker op: {broker_op}")
+        broker_ops.append(broker_op)
+
+    return policy.normalize_policy({
+        "tools": tools,
+        "broker_ops": broker_ops,
+        "auto_grant_ttl_seconds": body.auto_grant_ttl_seconds,
+    })
 
 
 # ── App factory ──────────────────────────────────────────────────────
@@ -216,18 +368,15 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
         _config.state_dir.mkdir(parents=True, exist_ok=True)
         _conn = db.init_db(_config.db_path)
 
-        # Load policies
-        policy.load_profiles(_config.policies_dir)
-
         # Load registry
-        registry.load_registry(_config.tools_dir)
+        tools = registry.load_registry(_config.tools_dir)
 
         # Start timeout reaper
         reaper_task = asyncio.create_task(run_reaper(_conn, interval_seconds=30.0))
 
         logger.info(
-            "broker started on %s (policies=%s, tools=%s, dispatcher=%s)",
-            _config.bind_addr, _config.policies_dir, _config.tools_dir,
+            "broker started on %s (state=%s, tools=%s, dispatcher=%s)",
+            _config.bind_addr, _config.state_dir, _config.tools_dir,
             type(_dispatcher).__name__,
         )
 
@@ -396,6 +545,59 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
             raise HTTPException(status_code=404, detail="request not found")
         return _serialize_request(result)
 
+    # ── Approval UI message state ─────────────────────────────────
+
+    @app.get("/v1/approval-messages")
+    async def list_approval_messages(
+        caller: Caller = Depends(require_auth),
+    ):
+        """GET /v1/approval-messages — list Discord message mappings."""
+        _require_broker_op(caller, "approval_messages.read")
+        rows = db.list_approval_messages(get_conn(), surface="discord")
+        return {"messages": [_serialize_approval_message(r) for r in rows]}
+
+    @app.get("/v1/approval-messages/{request_id}")
+    async def get_approval_message(
+        request_id: int,
+        caller: Caller = Depends(require_auth),
+    ):
+        """GET /v1/approval-messages/<id> — get one Discord message mapping."""
+        _require_broker_op(caller, "approval_messages.read")
+        row = db.get_approval_message(get_conn(), request_id)
+        if row is None or row["surface"] != "discord":
+            raise HTTPException(status_code=404, detail="approval message not found")
+        return _serialize_approval_message(row)
+
+    @app.put("/v1/approval-messages/{request_id}")
+    async def upsert_approval_message(
+        request_id: int,
+        body: ApprovalMessageBody,
+        caller: Caller = Depends(require_auth),
+    ):
+        """PUT /v1/approval-messages/<id> — record a Discord message mapping."""
+        _require_broker_op(caller, "approval_messages.write")
+        conn = get_conn()
+        if db.get_request(conn, request_id) is None:
+            raise HTTPException(status_code=404, detail="request not found")
+        row = db.upsert_approval_message(
+            conn,
+            request_id,
+            surface="discord",
+            message_id=body.message_id,
+            last_status=body.last_status,
+        )
+        return _serialize_approval_message(row)
+
+    @app.delete("/v1/approval-messages/{request_id}")
+    async def delete_approval_message(
+        request_id: int,
+        caller: Caller = Depends(require_auth),
+    ):
+        """DELETE /v1/approval-messages/<id> — forget a Discord message mapping."""
+        _require_broker_op(caller, "approval_messages.write")
+        deleted = db.delete_approval_message(get_conn(), request_id)
+        return {"deleted": deleted}
+
     # ── Audit ────────────────────────────────────────────────────
 
     @app.get("/v1/audit")
@@ -437,18 +639,181 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
     async def reload_registry(caller: Caller = Depends(require_auth)):
         """POST /v1/registry/reload — re-read toolyard.yaml files.
 
-        Requires ``broker.registry.reload`` in the caller's profile.
+        Requires ``broker.registry.reload`` in the caller's policy.
         """
         _require_broker_op(caller, "registry.reload")
         cfg = get_config()
         new_registry = registry.load_registry(cfg.tools_dir)
-        policy.reload_profiles()
         audit.record(
             get_conn(), "registry.reload",
             caller_id=caller.id,
             detail={"tool_count": len(new_registry)},
         )
         return {"reloaded": True, "tool_count": len(new_registry)}
+
+    # ── Broker admin ────────────────────────────────────────────────
+
+    @app.get("/v1/admin/tools")
+    async def admin_list_tools(caller: Caller = Depends(require_auth)):
+        _require_admin(caller, "tools.read")
+        return {"tools": _admin_tool_payload()}
+
+    @app.get("/v1/admin/callers")
+    async def admin_list_callers(
+        include_revoked: bool = Query(False),
+        caller: Caller = Depends(require_auth),
+    ):
+        _require_admin(caller, "callers.read")
+        rows = db.list_callers(get_conn(), include_revoked=include_revoked)
+        return {"callers": [_public_caller(row) for row in rows]}
+
+    @app.post("/v1/admin/callers")
+    async def admin_create_caller(
+        body: AdminCreateCallerBody,
+        caller: Caller = Depends(require_auth),
+    ):
+        _require_admin(caller, "callers.write")
+        _validate_caller_name(body.name)
+        conn = get_conn()
+        try:
+            caller_row = db.create_caller(conn, body.name)
+        except sqlite3.IntegrityError as exc:
+            raise HTTPException(status_code=409, detail="caller already exists") from exc
+        policy.upsert_policy(
+            conn,
+            caller_row["id"],
+            _policy_from_body(body.policy) if body.policy else policy.empty_policy(),
+        )
+        raw_token, hash_prefix = tokens.create_token_for_caller(conn, caller_row["id"])
+        audit.record(
+            conn,
+            "token.created",
+            caller_id=caller_row["id"],
+            detail={
+                "caller": body.name,
+                "hash_prefix": hash_prefix,
+                "created_by": caller.name,
+            },
+        )
+        return {
+            "caller": _public_caller(caller_row),
+            "token": raw_token,
+            "hash_prefix": hash_prefix,
+        }
+
+    @app.get("/v1/admin/callers/{caller_name}/policy")
+    async def admin_get_caller_policy(
+        caller_name: str,
+        caller: Caller = Depends(require_auth),
+    ):
+        _require_admin(caller, "callers.read")
+        caller_row = db.get_caller_by_name(get_conn(), _validate_caller_name(caller_name))
+        if caller_row is None:
+            raise HTTPException(status_code=404, detail="caller not found")
+        return _structured_caller_policy(
+            caller_row,
+            policy.caller_policy(get_conn(), caller_row["id"]),
+        )
+
+    @app.put("/v1/admin/callers/{caller_name}/policy")
+    async def admin_put_caller_policy(
+        caller_name: str,
+        body: AdminCallerPolicyBody,
+        caller: Caller = Depends(require_auth),
+    ):
+        _require_admin(caller, "callers.write")
+        conn = get_conn()
+        caller_row = db.get_caller_by_name(conn, _validate_caller_name(caller_name))
+        if caller_row is None:
+            raise HTTPException(status_code=404, detail="caller not found")
+        policy_data = _policy_from_body(body)
+        policy.upsert_policy(conn, caller_row["id"], policy_data)
+        audit.record(
+            conn,
+            "caller.policy.updated",
+            caller_id=caller.id,
+            detail={"caller": caller_name},
+        )
+        return _structured_caller_policy(caller_row, policy_data)
+
+    @app.post("/v1/admin/callers/{caller_name}/refresh-token")
+    async def admin_refresh_caller_token(
+        caller_name: str,
+        caller: Caller = Depends(require_auth),
+    ):
+        _require_admin(caller, "tokens.write")
+        conn = get_conn()
+        caller_row = db.get_caller_by_name(conn, _validate_caller_name(caller_name))
+        if caller_row is None or caller_row.get("revoked_at") is not None:
+            raise HTTPException(status_code=404, detail="caller not found")
+        revoked = db.revoke_tokens_for_caller(conn, caller_row["id"])
+        raw_token, hash_prefix = tokens.create_token_for_caller(conn, caller_row["id"])
+        audit.record(
+            conn,
+            "token.refreshed",
+            caller_id=caller_row["id"],
+            detail={
+                "caller": caller_name,
+                "revoked": revoked,
+                "hash_prefix": hash_prefix,
+                "created_by": caller.name,
+            },
+        )
+        return {
+            "caller": _public_caller(caller_row),
+            "token": raw_token,
+            "hash_prefix": hash_prefix,
+            "revoked": revoked,
+        }
+
+    @app.delete("/v1/admin/callers/{caller_name}")
+    async def admin_revoke_caller(
+        caller_name: str,
+        caller: Caller = Depends(require_auth),
+    ):
+        _require_admin(caller, "callers.write")
+        revoked = db.revoke_caller(get_conn(), caller_name)
+        if revoked:
+            audit.record(
+                get_conn(),
+                "token.revoked",
+                caller_id=caller.id,
+                detail={"caller": caller_name, "reason": "caller revoked via admin API"},
+            )
+        return {"revoked": revoked}
+
+    @app.get("/v1/admin/tokens")
+    async def admin_list_tokens(
+        include_revoked: bool = Query(False),
+        caller: Caller = Depends(require_auth),
+    ):
+        _require_admin(caller, "tokens.read")
+        rows = db.list_tokens(get_conn(), include_revoked=include_revoked)
+        return {
+            "tokens": [
+                {
+                    **{k: v for k, v in row.items() if k != "token_hash"},
+                    "hash_prefix": row["token_hash"][:8],
+                }
+                for row in rows
+            ]
+        }
+
+    @app.delete("/v1/admin/tokens/{hash_prefix}")
+    async def admin_revoke_token(
+        hash_prefix: str,
+        caller: Caller = Depends(require_auth),
+    ):
+        _require_admin(caller, "tokens.write")
+        count = db.revoke_token(get_conn(), hash_prefix)
+        if count:
+            audit.record(
+                get_conn(),
+                "token.revoked",
+                caller_id=caller.id,
+                detail={"hash_prefix": hash_prefix[:8], "count": count},
+            )
+        return {"revoked": count}
 
     # ── MCP blind forwarder ──────────────────────────────────────
 
@@ -467,7 +832,7 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
             return JSON-RPC error -32000 with request_id in ``data``. Deny →
             return JSON-RPC error -32001.
           - For other methods (``initialize``, ``tools/list``, etc.): checks
-            that the caller's profile permits this tool, then forwards blind.
+            that the caller's policy permits this tool, then forwards blind.
             No action_request row is created.
         """
         try:
@@ -568,12 +933,12 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
                 },
             )
 
-        # Non-tools/call methods: blind forward if the profile allows this tool.
-        profile_data = policy.get_profile(caller.profile)
-        if profile_data is None or not _profile_allows_tool(profile_data, tool):
+        # Non-tools/call methods: blind forward if caller policy allows this tool.
+        caller_policy = policy.caller_policy(get_conn(), caller.id)
+        if not policy.caller_allows_tool(caller_policy, tool):
             return _jsonrpc_error(
                 frame_id, JSONRPC_DENIED,
-                f"profile '{caller.profile}' does not allow tool '{tool}'",
+                f"caller '{caller.name}' does not allow tool '{tool}'",
                 http_status=403,
             )
 
@@ -586,25 +951,6 @@ def create_app(config: Config | None = None, dispatcher: Dispatcher | None = Non
         )
 
     return app
-
-
-def _profile_allows_tool(profile: dict[str, Any], tool_id: str) -> bool:
-    """Permissive check: does this profile let the caller see/list this tool?
-
-    True if:
-      - tool_id is in allowed_tools, OR
-      - any allowed_ops / review_ops pattern starts with ``<tool_id>.``
-
-    A `*.foo` pattern does NOT satisfy this check — operators should add the
-    tool to allowed_tools explicitly to grant tools/list / initialize.
-    """
-    if tool_id in (profile.get("denied_tools") or []):
-        return False
-    if tool_id in (profile.get("allowed_tools") or []):
-        return True
-    prefix = f"{tool_id}."
-    patterns = (profile.get("allowed_ops") or []) + (profile.get("review_ops") or [])
-    return any(isinstance(p, str) and p.startswith(prefix) for p in patterns)
 
 
 def _jsonrpc_error(

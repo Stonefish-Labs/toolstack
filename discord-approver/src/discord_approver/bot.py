@@ -342,7 +342,9 @@ class ApproverBot(discord.Client):
             embed = build_approval_embed(updated)
             await interaction.response.edit_message(embed=embed, view=None)
             # Update store
-            self._store.upsert(request_id, interaction.message.id, updated.status.value)
+            await self._store.upsert(
+                request_id, interaction.message.id, updated.status.value
+            )
         except Exception as e:
             logger.exception("approve failed for request %d", request_id)
             await interaction.response.send_message(
@@ -362,7 +364,9 @@ class ApproverBot(discord.Client):
             updated = await self._broker.reject(request_id, approver, reason=None)
             embed = build_approval_embed(updated)
             await interaction.response.edit_message(embed=embed, view=None)
-            self._store.upsert(request_id, interaction.message.id, updated.status.value)
+            await self._store.upsert(
+                request_id, interaction.message.id, updated.status.value
+            )
         except Exception as e:
             logger.exception("reject failed for request %d", request_id)
             await interaction.response.send_message(
@@ -405,7 +409,7 @@ class ApproverBot(discord.Client):
             return
 
         # Build set of message IDs for currently-pending requests (keep these)
-        stored = self._store.list_all()
+        stored = await self._store.list_all()
         pending_msg_ids = {
             m.message_id for m in stored
             if m.last_status not in _TERMINAL_STATUS_VALUES
@@ -426,7 +430,7 @@ class ApproverBot(discord.Client):
         # Clean up store entries for terminal messages
         for m in stored:
             if m.last_status in _TERMINAL_STATUS_VALUES:
-                self._store.delete(m.request_id)
+                await self._store.delete(m.request_id)
 
         logger.info("/clear by %s: deleted %d messages", interaction.user.name, deleted)
         await interaction.followup.send(

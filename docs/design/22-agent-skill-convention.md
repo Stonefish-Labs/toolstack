@@ -12,7 +12,7 @@ execution boundary.
 ## Goals
 
 - Keep agent context small through progressive disclosure.
-- Keep local setup profile-scoped and portable across local agent hosts.
+- Keep local setup caller-scoped and portable across local agent hosts.
 - Avoid local dependency drift, virtual environments, or startup-heavy protocol
   clients for routine actions.
 - Keep downstream credentials, secret-manager tokens, and service logic out of
@@ -41,18 +41,18 @@ to read for task-specific details.
 
 `scripts/<tool>-cli` is the stable executable entry point. It should work from
 any current directory and should not require `bash -c`, a manual `cd`, package
-installation, or profile-specific paths.
+installation, or caller-specific paths.
 
 `scripts/<tool>-cli.mjs` is the default implementation for thin broker clients.
 Use dependency-free Node so the skill does not need a venv or install step.
 Other runtimes are acceptable only if they preserve the same command and config
 contract.
 
-`scripts/bootstrap.mjs` creates local or global Toolstack profile config and
+`scripts/bootstrap.mjs` creates local or global Toolstack caller config and
 token directories. It does not fetch or mint tokens by itself.
 
 `scripts/toolstack-skill.mjs` may hold shared helper logic for config loading,
-token-file handling, broker calls, rendering, and local profile config
+token-file handling, broker calls, rendering, and local caller config
 discovery.
 
 `references/` files hold detailed usage guidance that the agent should load only
@@ -62,30 +62,30 @@ when needed.
 
 Do not hardcode a deployment URL or broker token in skill code.
 
-Every Toolstack-backed skill declares a broker namespace and default profile:
+Every Toolstack-backed skill declares a broker namespace and default caller:
 
 ```js
 loadToolstackConfig({
   toolstackName: "<broker-tool>",
-  defaultProfile: "<profile>",
+  defaultCaller: "<caller>",
   envPrefix: "<TOOL>",
 });
 ```
 
 Use broker tool names, not skill directory names, for Toolstack namespaces. This
-lets multiple skills share one broker tool while using different profiles.
+lets multiple skills share one broker tool while using different callers.
 
 Runtime precedence:
 
-1. Environment variables supplied by the profile or process.
-2. Local Toolstack profile config.
-3. Global XDG Toolstack profile config.
+1. Environment variables supplied by the caller or process.
+2. Local Toolstack caller config.
+3. Global XDG Toolstack caller config.
 4. A clear setup error that names the checked config files.
 
 Use uppercase, tool-scoped environment overrides:
 
 ```bash
-<TOOL>_TOOLSTACK_PROFILE=<profile>
+<TOOL>_TOOLSTACK_CALLER=<caller>
 <TOOL>_TOOLSTACK_URL=<toolstack-url>
 <TOOL>_TOOLSTACK_TOKEN=<raw broker token>
 <TOOL>_TOOLSTACK_TOKEN_FILE=<token-file>
@@ -94,24 +94,24 @@ Use uppercase, tool-scoped environment overrides:
 The token file is the normal path. The raw token env var is a fallback for
 systems that already manage secrets in the process environment.
 
-Local config should be discovered from the active agent profile or installed
+Local config should be discovered from the active caller or installed
 skill path. Global fallback uses `${XDG_CONFIG_HOME:-$HOME/.config}`. Both use
 the same Toolstack layout:
 
 ```text
-<config-home>/toolstack/<broker-tool>/profiles/<profile>.env
-<config-home>/toolstack/<broker-tool>/tokens/<profile>.token
+<config-home>/toolstack/<broker-tool>/callers/<caller>.env
+<config-home>/toolstack/<broker-tool>/tokens/<caller>.token
 ```
 
-Profile `.env` files use generic keys, not tool-prefixed keys:
+Caller `.env` files use generic keys, not tool-prefixed keys:
 
 ```bash
 TOOLSTACK_URL=<toolstack-url>
-TOOLSTACK_TOKEN_FILE=tokens/<profile>.token
+TOOLSTACK_TOKEN_FILE=tokens/<caller>.token
 ```
 
 Relative `TOOLSTACK_TOKEN_FILE` paths resolve from
-`<config-home>/toolstack/<broker-tool>/`. This keeps each broker tool's profile
+`<config-home>/toolstack/<broker-tool>/`. This keeps each broker tool's caller
 config and token files together.
 
 ## Broker Call Contract
@@ -155,15 +155,15 @@ Bootstrap should be deterministic and safe to rerun:
 node "${SKILL_DIR}/scripts/bootstrap.mjs" --url <toolstack-url>
 ```
 
-For alternate profiles or global defaults:
+For alternate callers or global defaults:
 
 ```bash
-node "${SKILL_DIR}/scripts/bootstrap.mjs" --profile <profile> --url <toolstack-url>
-node "${SKILL_DIR}/scripts/bootstrap.mjs" --global --profile <profile> --url <toolstack-url>
+node "${SKILL_DIR}/scripts/bootstrap.mjs" --caller <caller> --url <toolstack-url>
+node "${SKILL_DIR}/scripts/bootstrap.mjs" --global --caller <caller> --url <toolstack-url>
 ```
 
 For read-only variants, prefer a flag that changes only the selected Toolstack
-profile:
+caller:
 
 ```bash
 node "${SKILL_DIR}/scripts/bootstrap.mjs" --readonly --url <toolstack-url>
@@ -171,7 +171,7 @@ node "${SKILL_DIR}/scripts/bootstrap.mjs" --readonly --url <toolstack-url>
 
 Bootstrap should:
 
-- create `<config-home>/toolstack/<broker-tool>/profiles/<profile>.env`;
+- create `<config-home>/toolstack/<broker-tool>/callers/<caller>.env`;
 - create `<config-home>/toolstack/<broker-tool>/tokens/`;
 - write `TOOLSTACK_URL` and `TOOLSTACK_TOKEN_FILE`;
 - keep file permissions private where the filesystem supports it;
@@ -183,7 +183,7 @@ Server-side tools follow the template in
 [`21-tool-template.md`](21-tool-template.md). This convention is the matching
 agent-side wrapper. A complete integration usually has both:
 
-- a Toolstack tool service with a `toolyard.yaml`, policy profile, and broker
+- a Toolstack tool service with a `toolyard.yaml`, caller policy, and broker
   operations;
 - a minimal `<tool>-ctrl` skill that exposes the right operations to the agent
   only when the skill is invoked.

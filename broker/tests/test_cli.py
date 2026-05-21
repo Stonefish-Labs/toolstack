@@ -13,12 +13,11 @@ from broker.cli import main
 
 
 @pytest.fixture
-def cli_env(tmp_path, sample_profiles_dir):
+def cli_env(tmp_path):
     """Set up env vars for CLI commands pointing at temp dirs."""
     env = {
         "BROKER_STATE_DIR": str(tmp_path / "state"),
         "BROKER_TOOLS_DIR": str(tmp_path / "tools"),
-        "BROKER_POLICIES_DIR": str(sample_profiles_dir),
         "BROKER_ALLOW_UNKNOWN_TOOLS": "true",
     }
     (tmp_path / "tools").mkdir(exist_ok=True)
@@ -35,7 +34,7 @@ def test_init_db(cli_env, capsys):
 
 def test_create_caller(cli_env, capsys):
     main(["init-db"])
-    main(["create-caller", "--name", "agent.test", "--profile", "home-default"])
+    main(["create-caller", "--name", "agent.test", "--allow", "hello-rest.greet"])
     output = capsys.readouterr().out
     assert "agent.test" in output
     assert "BEARER TOKEN" in output
@@ -43,7 +42,7 @@ def test_create_caller(cli_env, capsys):
 
 def test_list_callers(cli_env, capsys):
     main(["init-db"])
-    main(["create-caller", "--name", "agent.lc", "--profile", "home-default"])
+    main(["create-caller", "--name", "agent.lc"])
     capsys.readouterr()  # clear
 
     main(["list-callers"])
@@ -53,7 +52,7 @@ def test_list_callers(cli_env, capsys):
 
 def test_list_callers_json(cli_env, capsys):
     main(["init-db"])
-    main(["create-caller", "--name", "agent.json", "--profile", "p"])
+    main(["create-caller", "--name", "agent.json"])
     capsys.readouterr()
 
     main(["list-callers", "--json"])
@@ -65,7 +64,7 @@ def test_list_callers_json(cli_env, capsys):
 
 def test_revoke_caller(cli_env, capsys):
     main(["init-db"])
-    main(["create-caller", "--name", "agent.rev", "--profile", "p"])
+    main(["create-caller", "--name", "agent.rev"])
     capsys.readouterr()
 
     main(["revoke-caller", "agent.rev"])
@@ -75,7 +74,7 @@ def test_revoke_caller(cli_env, capsys):
 
 def test_list_tokens(cli_env, capsys):
     main(["init-db"])
-    main(["create-caller", "--name", "agent.lt", "--profile", "p"])
+    main(["create-caller", "--name", "agent.lt"])
     capsys.readouterr()
 
     main(["list-tokens"])

@@ -10,7 +10,7 @@ import sqlite3
 import time
 from typing import Any
 
-from broker import audit, db
+from broker import audit, db, policy
 from broker.dispatch import Dispatcher
 from broker.models import (
     ActionRequest,
@@ -27,7 +27,6 @@ def _row_to_action_request(row: dict, conn: sqlite3.Connection) -> ActionRequest
     """Convert a DB row + joined caller info into an ActionRequest model."""
     caller_row = db.get_caller_by_id(conn, row["caller_id"])
     caller_name = caller_row["name"] if caller_row else "unknown"
-    profile = caller_row["profile"] if caller_row else "unknown"
 
     policy_dec = json.loads(row["policy_decision"]) if row.get("policy_decision") else {}
     args = json.loads(row["args_json"]) if row.get("args_json") else {}
@@ -42,7 +41,6 @@ def _row_to_action_request(row: dict, conn: sqlite3.Connection) -> ActionRequest
         id=row["id"],
         caller=caller_name,
         caller_id=row["caller_id"],
-        profile=profile,
         tool=row["tool"],
         op=row["op"],
         arguments=args,
@@ -112,14 +110,15 @@ async def handle_action_request(
     # 3. Evaluate policy
     policy_input = PolicyInput(
         caller_id=caller.id,
-        profile=caller.profile,
+        caller=caller.name,
         tool=tool,
         op=op,
+        declared_risk=_declared_operation_risk(tool_desc, op),
         arguments=arguments,
         reason=reason,
         active_grants=active_grants,
     )
-    decision = decide(policy_input)
+    decision = decide(policy_input, policy.caller_policy(conn, caller.id))
     policy_dec_dict = decision.model_dump()
 
     # 4. Redact arguments before storage
@@ -237,3 +236,14 @@ def list_request_models(
     """List requests as ActionRequest models."""
     rows = db.list_requests(conn, status=status, limit=limit, after_id=after_id)
     return [_row_to_action_request(r, conn) for r in rows]
+
+
+def _declared_operation_risk(tool_desc: ToolDescriptor | None, op: str) -> str | None:
+    if tool_desc is None:
+        return None
+    for operation in tool_desc.operations:
+        if not isinstance(operation, dict):
+            continue
+        if operation.get("op") == op and operation.get("risk") in {"read", "write", "destructive"}:
+            return operation["risk"]
+    return None

@@ -121,7 +121,7 @@ def build_approval_embed(request: Request) -> discord.Embed:
     Layout per design/30-approver-discord.md:
     - Title: "Approval needed: {tool}.{op}" for pending; "{tool}.{op}" for terminal
     - Color: status-based
-    - Fields: Caller, Profile, Risk (inline); Reason, Arguments, Decision (full width)
+    - Fields: Caller, Risk (inline); Reason, Arguments, Decision (full width)
     - Footer: "Request #{id}" + relative time
     """
     is_pending = request.status == RequestStatus.PENDING_REVIEW
@@ -138,7 +138,6 @@ def build_approval_embed(request: Request) -> discord.Embed:
     embed = discord.Embed(title=title, description=description, color=_status_color(request.status))
 
     embed.add_field(name="Caller", value=request.caller, inline=True)
-    embed.add_field(name="Profile", value=request.profile, inline=True)
 
     risk_emoji = {"read": "🟢", "write": "🟡", "destructive": "🔴"}.get(request.risk, "⚪")
     embed.add_field(name="Risk", value=f"{risk_emoji} {request.risk}", inline=True)

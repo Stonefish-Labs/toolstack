@@ -60,6 +60,7 @@ def verify_token(authorization: str = Header(...)) -> str:
 class RequestStore:
     def __init__(self) -> None:
         self.requests: dict[int, dict] = {}
+        self.messages: dict[int, dict] = {}
         self.next_id = 1
 
     def inject(self, data: dict) -> dict:
@@ -69,7 +70,6 @@ class RequestStore:
         req = {
             "id": req_id,
             "caller": data.get("caller", "agent.hermes"),
-            "profile": data.get("profile", "home-default"),
             "tool": data.get("tool", "hello-rest"),
             "op": data.get("op", "skip_track"),
             "arguments": data.get("arguments", {}),
@@ -88,6 +88,7 @@ class RequestStore:
 
     def reset(self) -> None:
         self.requests.clear()
+        self.messages.clear()
         self.next_id = 1
         print("[RESET] All state cleared")
 
@@ -183,6 +184,61 @@ async def reject_request(
     return req
 
 
+@app.get("/v1/approval-messages")
+async def list_approval_messages(
+    _token: str = Depends(verify_token),
+) -> dict:
+    messages = sorted(store.messages.values(), key=lambda m: m["request_id"])
+    return {"messages": messages}
+
+
+@app.get("/v1/approval-messages/{request_id}")
+async def get_approval_message(
+    request_id: int,
+    _token: str = Depends(verify_token),
+) -> dict:
+    msg = store.messages.get(request_id)
+    if msg is None:
+        raise HTTPException(status_code=404, detail="Approval message not found")
+    return msg
+
+
+class ApprovalMessageBody(BaseModel):
+    message_id: int
+    last_status: str
+
+
+@app.put("/v1/approval-messages/{request_id}")
+async def upsert_approval_message(
+    request_id: int,
+    body: ApprovalMessageBody,
+    _token: str = Depends(verify_token),
+) -> dict:
+    if request_id not in store.requests:
+        raise HTTPException(status_code=404, detail="Request not found")
+    now = int(time.time())
+    existing = store.messages.get(request_id)
+    msg = {
+        "request_id": request_id,
+        "surface": "discord",
+        "message_id": body.message_id,
+        "last_status": body.last_status,
+        "posted_at": existing["posted_at"] if existing else now,
+        "updated_at": now,
+    }
+    store.messages[request_id] = msg
+    return msg
+
+
+@app.delete("/v1/approval-messages/{request_id}")
+async def delete_approval_message(
+    request_id: int,
+    _token: str = Depends(verify_token),
+) -> dict:
+    deleted = store.messages.pop(request_id, None) is not None
+    return {"deleted": deleted}
+
+
 @app.get("/v1/health")
 async def health() -> dict:
     return {"ok": True}
@@ -195,7 +251,6 @@ async def health() -> dict:
 
 class InjectBody(BaseModel):
     caller: str = "agent.hermes"
-    profile: str = "home-default"
     tool: str = "hello-rest"
     op: str = "skip_track"
     arguments: dict[str, Any] = {}

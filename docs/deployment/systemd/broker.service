@@ -23,7 +23,7 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictRealtime=yes
 LockPersonality=yes
-ReadWritePaths=/home/admin/toolstack/broker/state
+ReadWritePaths=/home/admin/.local/state/toolstack/broker
 
 [Install]
 WantedBy=multi-user.target

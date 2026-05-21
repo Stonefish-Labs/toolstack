@@ -48,7 +48,7 @@ flowchart LR
     Toolyard --> Tools["Tool containers\nREST or MCP HTTP"]
     Tools --> Downstream["Downstream systems\nSaaS, APIs, services"]
     Broker <--> Approver["Discord approver\nhuman review"]
-    Toolyard --> Secrets["1Password Connect\nscoped tool secrets"]
+    Toolyard --> Secrets["Infisical\nscoped tool secrets"]
 ```
 
 The broker is the authority boundary. Toolyard is the execution and secret
@@ -62,14 +62,14 @@ path.
 | Agent receives raw downstream credentials | Agent holds only a broker token |
 | Agent bypasses a local wrapper | Tool servers are not directly reachable from the agent host |
 | Every tool reinvents auth and audit | Broker centralizes policy, grants, approvals, and logs |
-| Approval fatigue hides what is happening | Approval cards show caller, profile, tool, operation, arguments, and risk |
+| Approval fatigue hides what is happening | Approval cards show caller, tool, operation, arguments, and risk |
 | One tool compromise exposes every secret | Toolyard resolves per-tool secrets and injects only declared fields |
-| New tools accidentally become available | Broker profiles must explicitly allow tools and operations |
+| New tools accidentally become available | Each caller policy must explicitly allow tools and operations |
 
 ## Components
 
 - [`broker/`](broker/) is the authority boundary. It authenticates callers,
-  evaluates profile policy, dispatches approved actions, and records audit
+  evaluates caller-owned policy, dispatches approved actions, and records audit
   events.
 - [`toolyard/`](toolyard/) is the Docker lifecycle runner and per-tool secret
   boundary. It reads `tools/<id>/toolyard.yaml`, starts enabled tools, and
@@ -78,8 +78,8 @@ path.
   requests that policy marks as review-required.
 - [`tools/`](tools/) contains small example tool containers. Current examples
   are `hello-rest` and `time-mcp`.
-- [`lib/op-connect-shim/`](lib/op-connect-shim/) is a dependency-free helper for
-  talking to 1Password Connect.
+- Infisical Universal Auth credentials live in host-side env files and are
+  consumed by Toolyard at workload start.
 - [`docs/`](docs/) contains the thesis, architecture, component specs,
   deployment guide, operator guide, and archived historical plans.
 
@@ -97,8 +97,6 @@ path.
   [`docs/design/21-tool-template.md`](docs/design/21-tool-template.md) and the
   examples under [`tools/`](tools/). For the matching agent-side wrapper, use
   [`docs/design/22-agent-skill-convention.md`](docs/design/22-agent-skill-convention.md).
-- **Review project history:** see [`docs/history/`](docs/history/). Those files
-  are archived implementation plans, not current guidance.
 
 ## Local Development
 
@@ -121,7 +119,7 @@ Docker-backed tests may also require a local Docker daemon.
 
 Real tokens, `.env` files, SQLite state, audit logs, virtualenvs, and generated
 build artifacts are intentionally ignored. Use the example files under
-`docs/deployment/env/` and `lib/op-connect-shim/*.env.example` as templates.
+`docs/deployment/env/` as templates.
 
 Deployment examples use placeholder hostnames such as
 `https://broker.your-tailnet.ts.net` and placeholder token file paths. Replace

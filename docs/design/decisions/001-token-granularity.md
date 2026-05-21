@@ -1,33 +1,39 @@
-# ADR 001: Token granularity is agent + profile
+# ADR 001: Token Granularity Is One Caller
 
-**Status**: Accepted (2026-05-16)
+**Status**: Accepted (2026-05-21, supersedes the older caller+profile shape)
 
 ## Context
 
-Bearer tokens authorize agent requests at the broker. Granularity choices:
-
-1. One token per agent — agent selects a profile at request time.
-2. One token per (agent, profile) — the token *is* the capability bundle.
-3. One token per (agent, profile, tool) — finest-grained.
-
-Granularity affects how many tokens we issue, how policy resolves, and how easy it is to scope an agent down or revoke its access.
+Bearer tokens authorize requests at the broker. Earlier designs bound tokens to
+`caller + profile`, where a reusable profile was the capability bundle. In
+practice, callers are concrete identities (`agent.kira`, `svc.approver`,
+`svc.broker-panel`) and reusable profiles added an extra concept without much
+benefit for this home-lab scale.
 
 ## Decision
 
-Each broker token is bound to one `(caller_id, profile)` pair. The token IS the capability bundle. If one agent needs two profiles, it gets two tokens.
+Each broker token belongs to exactly one caller. The caller owns its policy
+directly in SQLite. There is no request-time profile selection and no reusable
+profile abstraction in the admin API or panel.
+
+Refreshing a token means revoking the caller's active token rows and issuing one
+replacement token for the same caller.
 
 ## Consequences
 
-- Token lookup is O(1) — no per-request profile selection logic.
-- Policy resolution is straightforward: profile → ACL → allow/deny/review.
-- An agent that needs multiple profiles juggles multiple tokens. Operational cost is small for home-lab scale.
-- Profile changes require re-issuing the token. Acceptable: profiles change infrequently.
-- Revocation is per-(caller, profile). Operators usually want exactly this granularity.
-- Audit clearly shows which profile authorized each request without ambiguity.
-- Bearer tokens remain the primary broker identity. High-value service profiles can add proof-of-possession defense in depth; the Discord approver profile uses optional HMAC signing with a separate shared secret.
+- Token lookup remains O(1): token hash to caller.
+- Policy resolution is direct: caller to caller policy.
+- Audit clearly shows which caller requested the action.
+- Operators edit the real caller's enabled tool operations, with descriptions
+  from `toolyard.yaml`.
+- Reusable role templates can be added later if repeated policy editing becomes
+  painful, but they are not part of the runtime model.
 
-## Alternatives considered
+## Alternatives Considered
 
-- **Per-tool tokens**: too fine. N tokens per agent multiplies distribution and revocation overhead. Per-tool authorization can still be expressed inside the profile (e.g., `denied_tools`).
-- **One token, profile selected at request time**: more flexible (an agent could downgrade itself to a narrower profile), but easier to mis-issue (an agent could request a higher-privilege profile than intended). Worth revisiting if we add per-task profile elevation.
-- **mTLS device identity with ambient profile**: better security shape (no bearer token to steal), but more setup overhead than the home-lab needs today. Reconsider if any agent host moves outside our control.
+- **Reusable profiles**: useful for large fleets, but too abstract here and easy
+  to confuse with caller identity.
+- **Per-tool tokens**: precise but multiplies token distribution and revocation.
+- **One token with caller-selected role**: flexible but weakens issuance safety.
+- **mTLS device identity**: attractive, but more setup overhead than bearer
+  tokens on a tailnet.

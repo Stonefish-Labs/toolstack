@@ -22,7 +22,7 @@ from broker.models import ActionRequest, RequestStatus, ToolDescriptor
 
 def _make_request(**kwargs) -> ActionRequest:
     defaults = dict(
-        id=1, caller="test", profile="p", tool="t", op="o",
+        id=1, caller="test", tool="t", op="o",
         status=RequestStatus.RUNNING,
     )
     defaults.update(kwargs)
@@ -96,7 +96,7 @@ async def test_http_dispatcher_success():
     assert body["arguments"] == {"name": "you"}
     assert body["reason"] == "hi"
     assert body["broker_request_id"] == 42
-    assert body["caller"] == {"name": "test", "profile": "p"}
+    assert body["caller"] == {"name": "test"}
 
 
 @pytest.mark.asyncio

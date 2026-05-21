@@ -124,13 +124,12 @@ curl -s -X POST http://127.0.0.1:8765/v1/_dev/expire/REPLACE_WITH_ID
 
 Within one poll cycle, the card should turn red with "Expired (no decision within timeout)".
 
-## 8. State Recovery
+## 8. Restart Recovery
 
 1. Stop the bot (Ctrl+C).
-2. Delete the state file: `rm -f state/messages.sqlite3`
-3. Restart the bot.
-4. ✅ The bot should re-post cards for any outstanding pending requests.
-5. Already-terminal requests should NOT get new cards.
+2. Restart the bot.
+3. ✅ The bot should reuse broker-backed message mappings and not duplicate already-posted pending cards.
+4. Already-terminal requests should NOT get new cards.
 
 ## 9. Broker Downtime
 

@@ -165,14 +165,14 @@ If stealing the agent's local credential gives an attacker the ability to send
 mail, buy things, rotate production secrets, or change cloud infrastructure,
 then the broker is not doing its job.
 
-## Scope Agents To Capability Profiles
+## Scope Agents To Caller Policies
 
 Even broker access should not be ambient.
 
-An agent that is writing a release note does not need the same broker profile as
+An agent that is writing a release note does not need the same broker policy as
 an agent triaging customer email, rotating tokens, or touching production
 infrastructure. The right default is not "the agent can call the limited API."
-The right default is "this agent gets the narrow profile needed for this task,
+The right default is "this caller gets the narrow capabilities needed for this task,
 for this user, in this workspace, for this window of time."
 
 That requires design work. Sit down and decide what each agent or workflow
@@ -188,14 +188,15 @@ actually needs:
   purchases, deletes, credential changes, production mutations, and durable
   access creation.
 
-Profiles make the broker model sharper. A broker credential should identify the
-client and let it request a profile; it should not silently grant every
-operation the broker knows how to perform. The broker should be able to answer:
-which profile is active, why this agent has it, when it expires, who approved
-it, and which operations it permits.
+Caller policies make the broker model sharper. A broker credential should
+identify the client and map to a specific set of permitted operations; it should
+not silently grant every operation the broker knows how to perform. The broker
+should be able to answer: which caller is active, why this caller has these
+capabilities, when temporary grants expire, who approved them, and which
+operations they permit.
 
 This is how you avoid rebuilding the same ambient-access problem one layer
-higher. A broker with one universal "agent" profile is better than raw secrets
+higher. A broker with one universal "agent" policy is better than raw secrets
 on a laptop, but it is still leaving too much authority lying around.
 
 ## What The Broker Should Own
@@ -207,7 +208,7 @@ It should own:
 
 - authentication of the agent client
 - device or workload allowlisting
-- task or profile-scoped capability grants
+- task- or caller-scoped capability grants
 - operation-level authorization
 - input validation and normalization
 - server-side scoping of downstream credentials
@@ -254,7 +255,7 @@ tenant, device, and expected network. Make unknown clients start with no useful
 permissions until a human approves them.
 
 Authorization controls help. The broker should enforce allowlists by operation,
-profile, resource, tenant, data class, and risk level. Sensitive reads and
+caller, resource, tenant, data class, and risk level. Sensitive reads and
 writes should use JIT grants. External sends, purchases, deletes, privilege
 changes, and production mutations should require stronger checks or human
 approval.
@@ -278,10 +279,10 @@ fast: narrow read-only lookups, summaries over already-authorized data, draft
 creation, status checks, lint-like analysis, and safe metadata retrieval can be
 pre-authorized within policy.
 
-Profiles help with performance too. Common workflows can keep a small standing
-profile that makes everyday work fast, while infrequent or risky capabilities
-are requested on demand. The approval is then attached to the temporary profile
-or operation grant, not to a vague local command.
+Caller policies help with performance too. Common workflows can keep a small
+standing capability set that makes everyday work fast, while infrequent or risky
+capabilities are requested on demand. The approval is then attached to a
+temporary operation grant, not to a vague local command.
 
 The expensive gates should sit where the risk is. Reading one approved email
 thread is not the same as exporting a mailbox. Creating a draft is not the same
@@ -333,7 +334,7 @@ Better:
 Best:
 
 - The agent calls a broker with a low-power client credential.
-- The broker grants only the task profile the agent currently needs.
+- The broker grants only the task capabilities the agent currently needs.
 - The broker exposes abstract operations and owns policy decisions.
 - Tool servers are reachable by the broker, not directly by the agent.
 - Tool servers use scoped workload credentials.

@@ -55,7 +55,6 @@ python -m discord_approver.cli
 | `APPROVER_BROKER_SIGNING_SECRET_FILE` | ❌ | — | File containing HMAC signing secret for broker calls |
 | `APPROVER_ALLOWED_USER_IDS` | ✅* | — | Comma-separated Discord user IDs allowed to decide requests |
 | `APPROVER_ALLOWED_ROLE_IDS` | ✅* | — | Comma-separated Discord role IDs allowed to decide requests |
-| `APPROVER_STATE_DIR` | ❌ | `./state` | Directory for `messages.sqlite3` |
 | `APPROVER_POLL_INTERVAL_SECONDS` | ❌ | `10` | Polling interval in seconds |
 
 `*` At least one allowed user ID or role ID is required.
@@ -66,7 +65,7 @@ python -m discord_approver.cli
 Broker (HTTP API)  ◄──►  Reconciler  ◄──►  Discord (via discord.py)
                               │
                          MessageStore
-                        (SQLite mapping)
+                         (broker-backed)
 ```
 
 Key seams for testability and swappability:

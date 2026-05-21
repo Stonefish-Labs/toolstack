@@ -22,13 +22,21 @@ The previous `agent-broker/` implementation collapsed the broker and tool-server
 
 ## 3. No standing authority on the agent host
 
-The agent holds a broker bearer token bound to one caller + profile. That token does not directly perform actions; it grants the right to *ask*. Stealing it should not enable a destructive operation without additional gates (policy review, human approval).
+The agent holds a broker bearer token bound to one caller. That token does not directly perform actions; it grants the right to *ask*. Stealing it should not enable a destructive operation without additional gates (caller policy review, human approval).
 
-The agent should never hold SaaS tokens, cloud credentials, database passwords, SSH keys, or 1Password Connect tokens. Local-side credentials should be a low-power broker token at most.
+The agent should never hold SaaS tokens, cloud credentials, database passwords,
+SSH keys, or Infisical machine identity credentials. Local-side credentials
+should be a low-power broker token at most.
 
 ## 4. Secrets live with the workload
 
-Each tool's secrets are resolved at container-start time by toolyardd and injected into container tmpfs as per-tool files at `/run/secrets/<name>`. Tool containers do not hold 1Password Connect tokens; they read files and use `/run/toolyard/secrets.sock` only for descriptor-allowlisted writable fields. The toolyard is the trust boundary that enforces per-tool scoping within a single shared `ToolServer` vault, which keeps the topology operationally tractable as the number of tools grows.
+Each tool's secrets are resolved at container-start time by toolyardd and
+injected into container tmpfs as per-tool files at `/run/secrets/<name>`. Tool
+containers do not hold Infisical credentials; they read files and use
+`/run/toolyard/secrets.sock` only for descriptor-allowlisted writable fields.
+The toolyard is the trust boundary that enforces per-tool scoping within a
+single shared `ToolServer` Infisical project, which keeps the topology
+operationally tractable as the number of tools grows.
 
 The broker is not in the secret path. It cannot read upstream credentials. It does not inject auth into tool requests.
 
@@ -42,7 +50,7 @@ Approval pending past the timeout transitions to `expired` and cannot be retroac
 
 ## 6. Every action is auditable and revocable
 
-The broker records: caller, profile, requested operation, arguments (with secrets stripped), policy decision, approver (if any), dispatch result, and timing. Every record gets an immutable `id`.
+The broker records: caller, requested operation, arguments (with secrets stripped), policy decision, approver (if any), dispatch result, and timing. Every record gets an immutable `id`.
 
 Audit must be able to answer four questions for any incident:
 - What did the agent ask for?
@@ -62,6 +70,6 @@ Agents are good at making routine operations look unremarkable. The approval sur
 
 Tool onboarding is "drop a folder with a `toolyard.yaml`, pick an entry point, run `toolyard up`." That's it. Classification, risk analysis, capability inventory, and policy decisions live in *separate* layers and never block adding a tool.
 
-But none of that ergonomic ease relaxes the controls. A new tool added to the toolyard is not automatically reachable by an agent — the agent's profile has to explicitly include it, or it stays denied.
+But none of that ergonomic ease relaxes the controls. A new tool added to the toolyard is not automatically reachable by an agent — the caller policy has to explicitly include it, or it stays denied.
 
 The principle: friction on adding *tools* should be near-zero. Friction on adding *authority* should be deliberate and visible.

@@ -16,9 +16,16 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS callers (
     id          INTEGER PRIMARY KEY,
     name        TEXT UNIQUE NOT NULL,
-    profile     TEXT NOT NULL,
     created_at  INTEGER NOT NULL,
     revoked_at  INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS caller_policies (
+    caller_id                  INTEGER PRIMARY KEY REFERENCES callers(id) ON DELETE CASCADE,
+    policy_json                TEXT NOT NULL,
+    auto_grant_ttl_seconds     INTEGER,
+    created_at                 INTEGER NOT NULL,
+    updated_at                 INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tokens (
@@ -54,6 +61,15 @@ CREATE TABLE IF NOT EXISTS approvals (
     created_at  INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS approval_messages (
+    request_id   INTEGER PRIMARY KEY REFERENCES action_requests(id) ON DELETE CASCADE,
+    surface      TEXT NOT NULL,
+    message_id   INTEGER NOT NULL,
+    last_status  TEXT NOT NULL,
+    posted_at    INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS grants (
     id          INTEGER PRIMARY KEY,
     caller_id   INTEGER NOT NULL REFERENCES callers(id),
@@ -80,6 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_action_requests_expires ON action_requests(expire
 CREATE INDEX IF NOT EXISTS idx_grants_lookup ON grants(caller_id, tool, op, expires_at);
 CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at);
 CREATE INDEX IF NOT EXISTS idx_tokens_caller ON tokens(caller_id);
+CREATE INDEX IF NOT EXISTS idx_approval_messages_surface ON approval_messages(surface);
 """
 
 
@@ -102,12 +119,13 @@ def init_db(db_path: Path) -> sqlite3.Connection:
 
 # ── Callers ──────────────────────────────────────────────────────────
 
-def create_caller(conn: sqlite3.Connection, name: str, profile: str) -> dict:
+
+def create_caller(conn: sqlite3.Connection, name: str) -> dict:
     """Insert a new caller. Returns the row as a dict."""
     now = int(time.time())
     cur = conn.execute(
-        "INSERT INTO callers (name, profile, created_at) VALUES (?, ?, ?)",
-        (name, profile, now),
+        "INSERT INTO callers (name, created_at) VALUES (?, ?)",
+        (name, now),
     )
     conn.commit()
     return dict(conn.execute(
@@ -154,6 +172,46 @@ def list_callers(conn: sqlite3.Connection, include_revoked: bool = False) -> lis
     return [dict(r) for r in rows]
 
 
+# ── Caller policies ─────────────────────────────────────────────────
+
+def upsert_caller_policy(
+    conn: sqlite3.Connection,
+    caller_id: int,
+    policy_json: str,
+    auto_grant_ttl_seconds: int | None = None,
+) -> dict:
+    now = int(time.time())
+    conn.execute(
+        """
+        INSERT INTO caller_policies (
+            caller_id, policy_json, auto_grant_ttl_seconds, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(caller_id) DO UPDATE SET
+            policy_json = excluded.policy_json,
+            auto_grant_ttl_seconds = excluded.auto_grant_ttl_seconds,
+            updated_at = excluded.updated_at
+        """,
+        (caller_id, policy_json, auto_grant_ttl_seconds, now, now),
+    )
+    conn.commit()
+    return get_caller_policy(conn, caller_id) or {}
+
+
+def get_caller_policy(conn: sqlite3.Connection, caller_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM caller_policies WHERE caller_id = ?", (caller_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_caller_policies(conn: sqlite3.Connection) -> list[dict]:
+    rows = conn.execute(
+        "SELECT * FROM caller_policies ORDER BY caller_id"
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 # ── Tokens ───────────────────────────────────────────────────────────
 
 def create_token(conn: sqlite3.Connection, caller_id: int, token_hash: str) -> dict:
@@ -196,15 +254,26 @@ def revoke_token(conn: sqlite3.Connection, prefix_or_raw: str) -> int:
     return cur.rowcount
 
 
+def revoke_tokens_for_caller(conn: sqlite3.Connection, caller_id: int) -> int:
+    """Revoke all active tokens for a caller. Returns count revoked."""
+    now = int(time.time())
+    cur = conn.execute(
+        "UPDATE tokens SET revoked_at = ? WHERE caller_id = ? AND revoked_at IS NULL",
+        (now, caller_id),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
 def list_tokens(conn: sqlite3.Connection, include_revoked: bool = False) -> list[dict]:
     if include_revoked:
         rows = conn.execute(
-            "SELECT t.*, c.name as caller_name, c.profile "
+            "SELECT t.*, c.name as caller_name "
             "FROM tokens t JOIN callers c ON t.caller_id = c.id ORDER BY t.created_at"
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT t.*, c.name as caller_name, c.profile "
+            "SELECT t.*, c.name as caller_name "
             "FROM tokens t JOIN callers c ON t.caller_id = c.id "
             "WHERE t.revoked_at IS NULL ORDER BY t.created_at"
         ).fetchall()
@@ -334,6 +403,72 @@ def list_approvals_for_request(conn: sqlite3.Connection, request_id: int) -> lis
         (request_id,),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Approval messages ────────────────────────────────────────────────
+
+def upsert_approval_message(
+    conn: sqlite3.Connection,
+    request_id: int,
+    *,
+    surface: str,
+    message_id: int,
+    last_status: str,
+) -> dict:
+    now = int(time.time())
+    cur = conn.execute(
+        """
+        INSERT INTO approval_messages (
+            request_id, surface, message_id, last_status, posted_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(request_id) DO UPDATE SET
+            surface = excluded.surface,
+            message_id = excluded.message_id,
+            last_status = excluded.last_status,
+            updated_at = excluded.updated_at
+        """,
+        (request_id, surface, message_id, last_status, now, now),
+    )
+    conn.commit()
+    return dict(conn.execute(
+        "SELECT * FROM approval_messages WHERE request_id = ?",
+        (request_id,),
+    ).fetchone())
+
+
+def get_approval_message(
+    conn: sqlite3.Connection, request_id: int
+) -> dict | None:
+    row = conn.execute(
+        "SELECT * FROM approval_messages WHERE request_id = ?",
+        (request_id,),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_approval_messages(
+    conn: sqlite3.Connection, *, surface: str | None = None
+) -> list[dict]:
+    if surface is None:
+        rows = conn.execute(
+            "SELECT * FROM approval_messages ORDER BY request_id"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM approval_messages WHERE surface = ? ORDER BY request_id",
+            (surface,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_approval_message(conn: sqlite3.Connection, request_id: int) -> bool:
+    cur = conn.execute(
+        "DELETE FROM approval_messages WHERE request_id = ?",
+        (request_id,),
+    )
+    conn.commit()
+    return cur.rowcount > 0
 
 
 # ── Grants ───────────────────────────────────────────────────────────

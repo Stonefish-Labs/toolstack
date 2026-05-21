@@ -1,0 +1,30 @@
+[Unit]
+Description=Toolstack Broker Panel (admin UI)
+Documentation=file:///home/admin/toolstack/broker-panel/README.md
+After=network-online.target broker.service
+Wants=network-online.target
+Requires=broker.service
+
+[Service]
+Type=exec
+User=admin
+Group=admin
+WorkingDirectory=/home/admin/toolstack/broker-panel
+EnvironmentFile=/home/admin/.config/toolstack/broker-panel.env
+ExecStart=/home/admin/toolstack/broker-panel/.venv/bin/broker-panel serve
+Restart=on-failure
+RestartSec=5s
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=read-only
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+ReadOnlyPaths=/home/admin/toolstack /home/admin/.config/toolstack
+
+[Install]
+WantedBy=multi-user.target

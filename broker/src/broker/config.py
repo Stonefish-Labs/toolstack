@@ -11,14 +11,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+def default_state_dir() -> Path:
+    """Return the XDG state directory for broker runtime data."""
+    state_home = os.environ.get("XDG_STATE_HOME")
+    root = Path(state_home) if state_home else Path.home() / ".local" / "state"
+    return root / "toolstack" / "broker"
+
+
 @dataclass(frozen=True)
 class Config:
     """Immutable broker configuration loaded from environment."""
 
     bind_addr: str = "127.0.0.1:8765"
-    state_dir: Path = field(default_factory=lambda: Path("./state"))
+    state_dir: Path = field(default_factory=default_state_dir)
     tools_dir: Path = field(default_factory=lambda: Path("./tools"))
-    policies_dir: Path = field(default_factory=lambda: Path("./policies/profiles"))
     approval_timeout_seconds: int = 86400
     grant_default_ttl_seconds: int = 3600
     allow_unknown_tools: bool = False
@@ -62,11 +68,8 @@ def load_config() -> Config:
 
     raw = {
         "bind_addr": os.environ.get("BROKER_BIND_ADDR", "127.0.0.1:8765"),
-        "state_dir": Path(os.environ.get("BROKER_STATE_DIR", "./state")),
+        "state_dir": Path(os.environ.get("BROKER_STATE_DIR", default_state_dir())),
         "tools_dir": Path(os.environ.get("BROKER_TOOLS_DIR", "./tools")),
-        "policies_dir": Path(
-            os.environ.get("BROKER_POLICIES_DIR", "./policies/profiles")
-        ),
         "approval_timeout_seconds": int(
             os.environ.get("BROKER_APPROVAL_TIMEOUT_SECONDS", "86400")
         ),

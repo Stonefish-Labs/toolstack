@@ -14,7 +14,7 @@ from toolyard.docker_driver import CLIDockerDriver, DockerDriver
 from toolyard.lifecycle import add, down, list_tools, restart, up
 from toolyard.registry import get_descriptor, walk_tools
 from toolyard.schema import load_descriptor
-from toolyard.secrets import ConnectSecretResolver, SecretResolver
+from toolyard.secrets import InfisicalSecretResolver, SecretResolver
 
 
 DriverFactory = Callable[[], DockerDriver]
@@ -100,8 +100,13 @@ def _require(config: Config, tool_id: str):
 def _default_resolver(config: Config, descriptors: Sequence) -> SecretResolver | None:
     if not any(d.secrets for d in descriptors):
         return None
-    config.require_connect()
-    return ConnectSecretResolver(config.op_connect_host or "", config.op_connect_token_file or "")
+    config.require_infisical()
+    return InfisicalSecretResolver(
+        host=config.infisical_host or "",
+        credentials_dir=config.infisical_credentials_dir,
+        environment=config.infisical_environment,
+        organization_slug=config.infisical_organization_slug,
+    )
 
 
 def _cmd_secrets(config: Config, tool_id: str) -> None:

@@ -65,6 +65,7 @@ class OperationSpec(BaseModel):
 
     op: str
     risk: Risk = "write"
+    description: str = ""
     redact_args: list[str] = []
 
 

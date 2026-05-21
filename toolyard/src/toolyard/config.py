@@ -3,17 +3,36 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+
+def default_state_dir() -> Path:
+    """Return the XDG state directory for Toolyard runtime data."""
+    state_home = os.environ.get("XDG_STATE_HOME")
+    root = Path(state_home) if state_home else Path.home() / ".local" / "state"
+    return root / "toolstack"
+
+
+def default_config_dir() -> Path:
+    """Return the XDG config directory for Toolstack host configuration."""
+    config_home = os.environ.get("XDG_CONFIG_HOME")
+    root = Path(config_home) if config_home else Path.home() / ".config"
+    return root / "toolstack"
+
+
+def default_infisical_credentials_dir() -> Path:
+    return default_config_dir() / "infisical"
 
 
 @dataclass(frozen=True)
 class Config:
-    op_connect_host: str | None = None
-    op_connect_token_file: Path | None = None
-    op_connect_write_token_file: Path | None = None
+    infisical_host: str | None = None
+    infisical_environment: str = "prod"
+    infisical_credentials_dir: Path = field(default_factory=default_infisical_credentials_dir)
+    infisical_organization_slug: str | None = None
     tools_dir: Path = Path("./tools")
-    state_dir: Path = Path("./state")
+    state_dir: Path = field(default_factory=default_state_dir)
     runtime_dir: Path = Path("/run/toolstack/toolyardd")
     user_uid: int = 10000
     broker_reload_url: str | None = None
@@ -23,22 +42,14 @@ class Config:
     def user(self) -> str:
         return f"{self.user_uid}:{self.user_uid}"
 
-    def require_connect(self) -> None:
+    def require_infisical(self) -> None:
         missing = []
-        if not self.op_connect_host:
-            missing.append("TOOLYARD_OP_CONNECT_HOST")
-        if not self.op_connect_token_file:
-            missing.append("TOOLYARD_OP_CONNECT_TOKEN_FILE")
+        if not self.infisical_host:
+            missing.append("TOOLYARD_INFISICAL_HOST")
+        if not self.infisical_environment:
+            missing.append("TOOLYARD_INFISICAL_ENVIRONMENT")
         if missing:
-            raise ValueError("missing required Connect config: " + ", ".join(missing))
-
-    def require_write_connect(self) -> None:
-        self.require_connect()
-        if not self.op_connect_write_token_file:
-            raise ValueError(
-                "missing required Connect write config: "
-                "TOOLYARD_OP_CONNECT_WRITE_TOKEN_FILE"
-            )
+            raise ValueError("missing required Infisical config: " + ", ".join(missing))
 
 
 def load_config() -> Config:
@@ -51,11 +62,17 @@ def load_config() -> Config:
         return Path(value) if value else None
 
     return Config(
-        op_connect_host=os.environ.get("TOOLYARD_OP_CONNECT_HOST") or None,
-        op_connect_token_file=path_env("TOOLYARD_OP_CONNECT_TOKEN_FILE"),
-        op_connect_write_token_file=path_env("TOOLYARD_OP_CONNECT_WRITE_TOKEN_FILE"),
+        infisical_host=os.environ.get("TOOLYARD_INFISICAL_HOST") or None,
+        infisical_environment=os.environ.get("TOOLYARD_INFISICAL_ENVIRONMENT", "prod"),
+        infisical_credentials_dir=Path(
+            os.environ.get(
+                "TOOLYARD_INFISICAL_CREDENTIALS_DIR",
+                default_infisical_credentials_dir(),
+            )
+        ),
+        infisical_organization_slug=os.environ.get("TOOLYARD_INFISICAL_ORGANIZATION_SLUG") or None,
         tools_dir=Path(os.environ.get("TOOLYARD_TOOLS_DIR", "./tools")),
-        state_dir=Path(os.environ.get("TOOLYARD_STATE_DIR", "./state")),
+        state_dir=Path(os.environ.get("TOOLYARD_STATE_DIR", default_state_dir())),
         runtime_dir=Path(os.environ.get("TOOLYARD_RUNTIME_DIR", "/run/toolstack/toolyardd")),
         user_uid=uid,
         broker_reload_url=os.environ.get("TOOLYARD_BROKER_RELOAD_URL") or None,

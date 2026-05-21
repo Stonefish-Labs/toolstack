@@ -1,7 +1,7 @@
 """Domain models — Pydantic v2 models for the broker's data types.
 
 Response shapes for ActionRequest must match the Discord bot's Request model:
-  id, caller (str), profile, tool, op, arguments, reason, status, risk,
+  id, caller (str), tool, op, arguments, reason, status, risk,
   expires_at, approver, decision_note
 """
 
@@ -45,9 +45,16 @@ class Caller(BaseModel):
 
     id: int
     name: str
-    profile: str
     created_at: int
     revoked_at: int | None = None
+
+
+class CallerPolicy(BaseModel):
+    """Caller-scoped policy document."""
+
+    tools: dict[str, dict[str, dict[str, Literal["allow", "review", "deny"]]]] = {}
+    broker_ops: list[str] = []
+    auto_grant_ttl_seconds: int | None = None
 
 
 class Grant(BaseModel):
@@ -66,9 +73,10 @@ class PolicyInput(BaseModel):
     """Input to the policy decision function."""
 
     caller_id: int
-    profile: str
+    caller: str
     tool: str
     op: str
+    declared_risk: str | None = None
     arguments: dict[str, Any] = {}
     reason: str | None = None
     active_grants: list[Grant] = []
@@ -100,7 +108,6 @@ class ActionRequest(BaseModel):
 
     id: int
     caller: str              # caller name (string), NOT caller_id
-    profile: str
     tool: str
     op: str
     arguments: dict[str, Any] = {}
@@ -142,6 +149,7 @@ class ToolDescriptor(BaseModel):
 
     id: str
     type: str = "rest"          # rest | mcp-http | mcp-stdio
+    description: str = ""
     enabled: bool = True
     port: int | None = None
     operations: list[dict[str, Any]] = []

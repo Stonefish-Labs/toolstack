@@ -1,184 +1,99 @@
-"""Tests for policy.py - YAML loading + decide() branches."""
+"""Tests for caller-scoped policy decisions."""
 
 from __future__ import annotations
 
-from broker import policy
+import time
+
+from broker import db, policy
 from broker.models import Grant, PolicyInput
+from tests.conftest import sample_policy
 
 
-def test_load_profiles(sample_profiles_dir):
-    profiles = policy.load_profiles(sample_profiles_dir)
-    assert "home-default" in profiles
-    assert "approver" in profiles
-    assert "readonly" in profiles
-    assert "registry-admin" in profiles
-    assert "media-agent" in profiles
-    assert "tasks-agent" in profiles
-    assert "tasks-readonly" in profiles
-
-
-def test_media_agent_allows_read_op(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    inp = PolicyInput(
-        caller_id=1, profile="media-agent",
-        tool="media", op="get_current_playback",
+def _input(tool: str, op: str, *, declared_risk: str | None = None, grants=None) -> PolicyInput:
+    return PolicyInput(
+        caller_id=1,
+        caller="agent.test",
+        tool=tool,
+        op=op,
+        declared_risk=declared_risk,
+        active_grants=grants or [],
     )
-    dec = policy.decide(inp)
-    assert dec.effect == "allow"
-    assert dec.risk == "read"
 
 
-def test_media_agent_allows_write_op_without_review(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    inp = PolicyInput(
-        caller_id=1, profile="media-agent",
-        tool="media", op="set_volume",
-    )
-    dec = policy.decide(inp)
+def test_empty_policy_denies_by_default():
+    dec = policy.decide(_input("music", "play_item"), policy.empty_policy())
+    assert dec.effect == "deny"
+
+
+def test_media_policy_allows_read_and_write_ops():
+    caller_policy = sample_policy("media-agent")
+    assert policy.decide(_input("media", "get_status"), caller_policy).effect == "allow"
+    dec = policy.decide(_input("media", "set_volume"), caller_policy)
     assert dec.effect == "allow"
     assert dec.risk == "write"
 
 
-def test_tasks_agent_allows_read_ops(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    for op in ("find_tasks", "find_projects", "get_overview", "user_info"):
-        dec = policy.decide(PolicyInput(caller_id=1, profile="tasks-agent", tool="tasks", op=op))
-        assert dec.effect == "allow"
-
-
-def test_tasks_agent_allows_write_ops_without_review(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    for op in ("add_tasks", "update_tasks", "complete_tasks", "reschedule_tasks", "add_comment"):
-        dec = policy.decide(PolicyInput(caller_id=1, profile="tasks-agent", tool="tasks", op=op))
-        assert dec.effect == "allow"
-
-
-def test_tasks_agent_sends_delete_to_review(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    dec = policy.decide(PolicyInput(caller_id=1, profile="tasks-agent", tool="tasks", op="delete_object"))
+def test_tasks_policy_allows_writes_and_reviews_delete():
+    caller_policy = sample_policy("tasks-agent")
+    for op in ("find_tasks", "add_tasks", "update_tasks", "complete_tasks", "add_comment"):
+        assert policy.decide(_input("tasks", op), caller_policy).effect == "allow"
+    dec = policy.decide(_input("tasks", "delete_object"), caller_policy)
     assert dec.effect == "review"
     assert dec.risk == "destructive"
 
 
-def test_tasks_readonly_allows_only_reads(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
+def test_tasks_readonly_allows_only_reads():
+    caller_policy = sample_policy("tasks-readonly")
     for op in ("find_tasks", "find_projects", "get_task", "user_info"):
-        dec = policy.decide(PolicyInput(caller_id=1, profile="tasks-readonly", tool="tasks", op=op))
-        assert dec.effect == "allow"
-
+        assert policy.decide(_input("tasks", op), caller_policy).effect == "allow"
     for op in ("add_tasks", "update_tasks", "complete_tasks", "delete_object"):
-        dec = policy.decide(PolicyInput(caller_id=1, profile="tasks-readonly", tool="tasks", op=op))
-        assert dec.effect == "deny"
+        assert policy.decide(_input("tasks", op), caller_policy).effect == "deny"
 
 
-def test_decide_denied_tool(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    inp = PolicyInput(
-        caller_id=1, profile="home-default",
-        tool="admin", op="do_stuff",
+def test_declared_risk_overrides_name_heuristic():
+    dec = policy.decide(
+        _input("time-mcp", "today", declared_risk="read"),
+        sample_policy("home-default"),
     )
-    dec = policy.decide(inp)
-    assert dec.effect == "deny"
-
-
-def test_media_agent_denies_delete_style_ops(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    inp = PolicyInput(
-        caller_id=1, profile="media-agent",
-        tool="media", op="delete_playlist",
-    )
-    dec = policy.decide(inp)
-    assert dec.effect == "deny"
-
-
-def test_decide_unknown_profile(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    inp = PolicyInput(
-        caller_id=1, profile="nonexistent",
-        tool="media", op="get_state",
-    )
-    dec = policy.decide(inp)
-    assert dec.effect == "deny"
-    assert "not found" in dec.reason
-
-
-def test_home_default_does_not_grant_media_or_tasks(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    for tool, op in (("media", "set_volume"), ("tasks", "find_tasks"), ("tasks", "add_tasks")):
-        dec = policy.decide(PolicyInput(caller_id=1, profile="home-default", tool=tool, op=op))
-        assert dec.effect == "deny"
-
-
-def test_decide_risk_class_default_read(sample_profiles_dir):
-    """An allowed tool with a read op that doesn't match any specific rule."""
-    policy.load_profiles(sample_profiles_dir)
-    inp = PolicyInput(
-        caller_id=1, profile="home-default",
-        tool="time-mcp", op="read_state",
-    )
-    dec = policy.decide(inp)
     assert dec.effect == "allow"
     assert dec.risk == "read"
 
 
-def test_decide_with_active_grant(sample_profiles_dir):
-    """An active grant skips rule evaluation and allows."""
-    import time
-    policy.load_profiles(sample_profiles_dir)
+def test_active_grant_allows_without_policy_match():
     grant = Grant(
-        id=1, caller_id=1, tool="media", op="skip_track",
+        id=1,
+        caller_id=1,
+        tool="music",
+        op="play_item",
         expires_at=int(time.time()) + 3600,
     )
-    inp = PolicyInput(
-        caller_id=1, profile="home-default",
-        tool="media", op="skip_track",
-        active_grants=[grant],
-    )
-    dec = policy.decide(inp)
+    dec = policy.decide(_input("music", "play_item", grants=[grant]), policy.empty_policy())
     assert dec.effect == "allow"
     assert "grant" in dec.reason.lower()
 
 
-def test_decide_fail_closed_no_match(sample_profiles_dir):
-    """Tool not in allowed_tools and no op rules -> deny (fail closed)."""
-    policy.load_profiles(sample_profiles_dir)
-    inp = PolicyInput(
-        caller_id=1, profile="home-default",
-        tool="unknown_tool", op="do_something",
-    )
-    dec = policy.decide(inp)
-    assert dec.effect == "deny"
+def test_broker_op_matching():
+    caller_policy = sample_policy("control-panel-admin")
+    assert policy.caller_allows_broker_op(caller_policy, "admin.callers.read")
+    assert policy.caller_allows_broker_op(caller_policy, "audit")
+    assert not policy.caller_allows_broker_op(caller_policy, "registry.reload")
 
 
-def test_readonly_profile_does_not_grant_media_or_tasks(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    for tool, op in (("media", "get_current_playback"), ("media", "set_volume"), ("tasks", "get_task"), ("tasks", "find_tasks")):
-        dec = policy.decide(PolicyInput(caller_id=1, profile="readonly", tool=tool, op=op))
-        assert dec.effect == "deny"
+def test_policy_roundtrip_to_db(tmp_db):
+    caller = db.create_caller(tmp_db, "agent.roundtrip")
+    source = sample_policy("tasks-agent")
+    policy.upsert_policy(tmp_db, caller["id"], source)
+
+    loaded = policy.caller_policy(tmp_db, caller["id"])
+    assert loaded["tools"]["tasks"]["operations"]["delete_object"] == "review"
+    assert loaded["auto_grant_ttl_seconds"] == 3600
 
 
-def test_example_tools_are_allowed_for_home_and_readonly(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    cases = [
-        ("home-default", "hello-rest", "greet"),
-        ("home-default", "time-mcp", "current_time"),
-        ("home-default", "time-mcp", "time_in"),
-        ("readonly", "hello-rest", "greet"),
-        ("readonly", "time-mcp", "current_time"),
-        ("readonly", "time-mcp", "time_in"),
-    ]
-    for profile, tool, op in cases:
-        dec = policy.decide(PolicyInput(caller_id=1, profile=profile, tool=tool, op=op))
-        assert dec.effect == "allow"
+def test_seeded_hermes_shapes():
+    kira = sample_policy("hermes-kira")
+    minerva = sample_policy("hermes-minerva")
 
-
-def test_registry_admin_only_allows_registry_reload(sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    dec = policy.decide(PolicyInput(
-        caller_id=1, profile="registry-admin", tool="broker", op="registry.reload",
-    ))
-    assert dec.effect == "allow"
-    dec = policy.decide(PolicyInput(
-        caller_id=1, profile="registry-admin", tool="broker", op="approve",
-    ))
-    assert dec.effect == "deny"
+    assert policy.decide(_input("music", "play_item", declared_risk="write"), kira).effect == "allow"
+    assert policy.decide(_input("task-api", "find_tasks", declared_risk="read"), kira).effect == "deny"
+    assert policy.decide(_input("task-api", "delete_object", declared_risk="destructive"), minerva).effect == "review"
+    assert policy.decide(_input("calendar", "today", declared_risk="read"), minerva).effect == "allow"

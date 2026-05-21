@@ -25,7 +25,7 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictRealtime=yes
 LockPersonality=yes
-ReadWritePaths=/home/admin/toolstack/toolyard/state /run/toolstack/toolyardd
+ReadWritePaths=/home/admin/.local/state/toolstack /run/toolstack/toolyardd
 ReadOnlyPaths=/home/admin/toolstack /home/admin/.config/toolstack
 
 [Install]

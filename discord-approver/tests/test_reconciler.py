@@ -58,8 +58,8 @@ def reconciler(broker, store, ui):
 
 class TestStartupSync:
     async def test_posts_cards_for_pending_requests(self, reconciler, broker, ui):
-        broker.inject(caller="agent.hermes", profile="home", tool="media", op="play")
-        broker.inject(caller="agent.hermes", profile="home", tool="media", op="skip")
+        broker.inject(caller="agent.hermes", tool="media", op="play")
+        broker.inject(caller="agent.hermes", tool="media", op="skip")
         await reconciler.startup_sync()
         assert len(ui.posted) == 2
 
@@ -69,8 +69,8 @@ class TestStartupSync:
 
     async def test_edits_stale_messages(self, reconciler, broker, store, ui):
         # Simulate: bot had tracked a request, but it was approved externally
-        req = broker.inject(caller="a", profile="p", tool="t", op="o")
-        store.upsert(req.id, 5000, "pending_review")
+        req = broker.inject(caller="a", tool="t", op="o")
+        await store.upsert(req.id, 5000, "pending_review")
         # Now approve it in the broker
         await broker.approve(req.id, "admin")
         await reconciler.startup_sync()
@@ -79,8 +79,8 @@ class TestStartupSync:
         assert ui.edited[0] == (5000, "approved")
 
     async def test_does_not_repost_already_tracked(self, reconciler, broker, store, ui):
-        req = broker.inject(caller="a", profile="p", tool="t", op="o")
-        store.upsert(req.id, 5000, "pending_review")
+        req = broker.inject(caller="a", tool="t", op="o")
+        await store.upsert(req.id, 5000, "pending_review")
         await reconciler.startup_sync()
         # Should NOT post a new card (already tracked)
         assert len(ui.posted) == 0
@@ -89,19 +89,19 @@ class TestStartupSync:
 class TestTick:
     async def test_posts_new_pending(self, reconciler, broker, ui):
         await reconciler.startup_sync()
-        broker.inject(caller="a", profile="p", tool="t", op="o")
+        broker.inject(caller="a", tool="t", op="o")
         await reconciler.tick()
         assert len(ui.posted) == 1
 
     async def test_does_not_repost(self, reconciler, broker, ui):
-        broker.inject(caller="a", profile="p", tool="t", op="o")
+        broker.inject(caller="a", tool="t", op="o")
         await reconciler.startup_sync()
         await reconciler.tick()
         # Only one post total (from startup)
         assert len(ui.posted) == 1
 
     async def test_edits_on_state_transition(self, reconciler, broker, store, ui):
-        req = broker.inject(caller="a", profile="p", tool="t", op="o")
+        req = broker.inject(caller="a", tool="t", op="o")
         await reconciler.startup_sync()
         assert len(ui.posted) == 1
         msg_id = ui.posted[0][1]
@@ -115,7 +115,7 @@ class TestTick:
         assert ui.edited[0] == (msg_id, "approved")
 
     async def test_handles_expired(self, reconciler, broker, store, ui):
-        req = broker.inject(caller="a", profile="p", tool="t", op="o")
+        req = broker.inject(caller="a", tool="t", op="o")
         await reconciler.startup_sync()
         msg_id = ui.posted[0][1]
 
@@ -129,7 +129,7 @@ class TestTick:
         assert ui.edited[0] == (msg_id, "expired")
 
     async def test_skips_already_terminal(self, reconciler, broker, store, ui):
-        req = broker.inject(caller="a", profile="p", tool="t", op="o")
+        req = broker.inject(caller="a", tool="t", op="o")
         await reconciler.startup_sync()
 
         # Approve and let reconciler detect it
@@ -143,7 +143,7 @@ class TestTick:
         assert len(ui.edited) == 0
 
     async def test_handles_disappeared_request(self, reconciler, broker, store, ui):
-        req = broker.inject(caller="a", profile="p", tool="t", op="o")
+        req = broker.inject(caller="a", tool="t", op="o")
         await reconciler.startup_sync()
         msg_id = ui.posted[0][1]
 
@@ -158,14 +158,14 @@ class TestTick:
 class TestMultipleRequests:
     async def test_multiple_new_requests(self, reconciler, broker, ui):
         for i in range(5):
-            broker.inject(caller="a", profile="p", tool="t", op=f"op_{i}")
+            broker.inject(caller="a", tool="t", op=f"op_{i}")
         await reconciler.startup_sync()
         assert len(ui.posted) == 5
 
     async def test_mixed_state_transitions(self, reconciler, broker, ui, store):
-        r1 = broker.inject(caller="a", profile="p", tool="t", op="read")
-        r2 = broker.inject(caller="a", profile="p", tool="t", op="write")
-        r3 = broker.inject(caller="a", profile="p", tool="t", op="delete")
+        r1 = broker.inject(caller="a", tool="t", op="read")
+        r2 = broker.inject(caller="a", tool="t", op="write")
+        r3 = broker.inject(caller="a", tool="t", op="delete")
         await reconciler.startup_sync()
         assert len(ui.posted) == 3
 
@@ -187,7 +187,7 @@ class TestCleanup:
         # Create 5 requests, approve them all
         reqs = []
         for i in range(5):
-            r = broker.inject(caller="a", profile="p", tool="t", op=f"op_{i}")
+            r = broker.inject(caller="a", tool="t", op=f"op_{i}")
             reqs.append(r)
         await reconciler.startup_sync()
         assert len(ui.posted) == 5
@@ -203,7 +203,7 @@ class TestCleanup:
         assert ui.deleted[0] == ui.posted[0][1]
         assert ui.deleted[1] == ui.posted[1][1]
         # Store should have 3 remaining
-        assert len(store.list_all()) == 3
+        assert len(await store.list_all()) == 3
 
     async def test_does_not_prune_pending(self, broker, store, ui):
         reconciler = Reconciler(
@@ -212,12 +212,12 @@ class TestCleanup:
         )
         # Create 5 pending requests
         for i in range(5):
-            broker.inject(caller="a", profile="p", tool="t", op=f"op_{i}")
+            broker.inject(caller="a", tool="t", op=f"op_{i}")
         await reconciler.startup_sync()
         await reconciler.tick()
         # All pending → nothing pruned
         assert len(ui.deleted) == 0
-        assert len(store.list_all()) == 5
+        assert len(await store.list_all()) == 5
 
     async def test_no_prune_when_disabled(self, broker, store, ui):
         reconciler = Reconciler(
@@ -226,7 +226,7 @@ class TestCleanup:
         )
         reqs = []
         for i in range(5):
-            r = broker.inject(caller="a", profile="p", tool="t", op=f"op_{i}")
+            r = broker.inject(caller="a", tool="t", op=f"op_{i}")
             reqs.append(r)
         await reconciler.startup_sync()
         for r in reqs:
@@ -242,7 +242,7 @@ class TestCleanup:
         )
         reqs = []
         for i in range(3):
-            r = broker.inject(caller="a", profile="p", tool="t", op=f"op_{i}")
+            r = broker.inject(caller="a", tool="t", op=f"op_{i}")
             reqs.append(r)
         await reconciler.startup_sync()
         for r in reqs:

@@ -17,5 +17,7 @@ healthcheck:
 operations:
   - op: current_time
     risk: read
+    description: Return the current time for the tool server environment.
   - op: time_in
     risk: read
+    description: Return the current time for a requested location or timezone.

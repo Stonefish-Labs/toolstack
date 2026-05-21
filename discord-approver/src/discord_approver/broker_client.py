@@ -13,7 +13,7 @@ from typing import Protocol, runtime_checkable
 
 import httpx
 
-from discord_approver.models import Request, RequestStatus
+from discord_approver.models import Request, RequestStatus, StoredMessage
 from discord_approver.signing import make_signature_headers
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,24 @@ class BrokerClient(Protocol):
         self, request_id: int, approver: str, reason: str | None = None
     ) -> Request:
         """Reject a request. Returns the updated request."""
+        ...
+
+    async def list_approval_messages(self) -> list[StoredMessage]:
+        """Fetch all approval UI message mappings."""
+        ...
+
+    async def get_approval_message(self, request_id: int) -> StoredMessage | None:
+        """Fetch a message mapping by request ID."""
+        ...
+
+    async def upsert_approval_message(
+        self, request_id: int, message_id: int, status: str
+    ) -> StoredMessage:
+        """Insert or update a message mapping."""
+        ...
+
+    async def delete_approval_message(self, request_id: int) -> None:
+        """Delete a message mapping."""
         ...
 
 
@@ -163,12 +181,45 @@ class HTTPBrokerClient:
         resp.raise_for_status()
         return Request.model_validate(resp.json())
 
+    async def list_approval_messages(self) -> list[StoredMessage]:
+        resp = await self._request_with_retry("GET", "/v1/approval-messages")
+        resp.raise_for_status()
+        data = resp.json()
+        items = data if isinstance(data, list) else data.get("messages", [])
+        return [StoredMessage.model_validate(item) for item in items]
+
+    async def get_approval_message(self, request_id: int) -> StoredMessage | None:
+        resp = await self._request_with_retry(
+            "GET", f"/v1/approval-messages/{request_id}"
+        )
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return StoredMessage.model_validate(resp.json())
+
+    async def upsert_approval_message(
+        self, request_id: int, message_id: int, status: str
+    ) -> StoredMessage:
+        body = {"message_id": message_id, "last_status": status}
+        resp = await self._request_with_retry(
+            "PUT", f"/v1/approval-messages/{request_id}", json=body
+        )
+        resp.raise_for_status()
+        return StoredMessage.model_validate(resp.json())
+
+    async def delete_approval_message(self, request_id: int) -> None:
+        resp = await self._request_with_retry(
+            "DELETE", f"/v1/approval-messages/{request_id}"
+        )
+        resp.raise_for_status()
+
 
 class MockBrokerClient:
     """In-memory broker client for testing."""
 
     def __init__(self) -> None:
         self._requests: dict[int, Request] = {}
+        self._messages: dict[int, StoredMessage] = {}
         self._next_id = 1
 
     def inject(self, **kwargs) -> Request:
@@ -217,3 +268,29 @@ class MockBrokerClient:
         )
         self._requests[request_id] = updated
         return updated
+
+    async def list_approval_messages(self) -> list[StoredMessage]:
+        return sorted(self._messages.values(), key=lambda m: m.request_id)
+
+    async def get_approval_message(self, request_id: int) -> StoredMessage | None:
+        return self._messages.get(request_id)
+
+    async def upsert_approval_message(
+        self, request_id: int, message_id: int, status: str
+    ) -> StoredMessage:
+        import time
+
+        now = int(time.time())
+        existing = self._messages.get(request_id)
+        msg = StoredMessage(
+            request_id=request_id,
+            message_id=message_id,
+            last_status=status,
+            posted_at=existing.posted_at if existing else now,
+            updated_at=now,
+        )
+        self._messages[request_id] = msg
+        return msg
+
+    async def delete_approval_message(self, request_id: int) -> None:
+        self._messages.pop(request_id, None)

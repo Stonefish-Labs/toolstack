@@ -54,4 +54,4 @@ On any state transition (approved, rejected, timed-out, expired), the bot edits 
 - Bot needs a single channel ID configured. Multi-channel routing (by risk class, by tool) is deferred.
 - Bot must be configured with at least one allowed Discord user ID or role ID; names are not accepted because Discord snowflake IDs are stable.
 - Message embeds should never include resolved secret values. The broker's audit-redaction rules apply equally to anything the bot displays.
-- The mapping of `request_id ↔ message_id` lives in a tiny SQLite or JSON file on the bot host. If lost, the bot can repost cards on next poll; the old messages just become stale and get edited to "expired" on timeout.
+- The mapping of `request_id ↔ message_id` lives in broker SQLite state, not in a second Discord-side database.

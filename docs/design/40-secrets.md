@@ -1,20 +1,21 @@
 # Secrets
 
-Toolstack keeps 1Password Connect tokens on the host. Tool containers never get
-a Connect token. Initial secret values are hydrated by `toolyardd` and injected
-into the container's `/run/secrets` tmpfs; writable fields are updated through a
-per-tool Unix socket that enforces the descriptor allowlist.
+Toolstack keeps Infisical Universal Auth credentials on the host. Tool
+containers never get Infisical credentials. Initial secret values are hydrated
+by `toolyardd` and injected into the container's `/run/secrets` tmpfs; writable
+fields are updated through a per-tool Unix socket that enforces the descriptor
+allowlist.
 
-## Vault Convention
+## Infisical Convention
 
-Use one shared 1Password vault named `ToolServer` for tool-managed secrets.
-Each tool gets one item, usually named after the tool ID.
+Use one shared Infisical project named `ToolServer` for tool-managed secrets.
+Each tool gets one secret path, usually named after the tool ID.
 
 ```
 ToolServer
-  hello-rest
+  /hello-rest
     API_KEY
-  media
+  /media
     CLIENT_ID
     CLIENT_SECRET
     REFRESH_TOKEN
@@ -31,14 +32,15 @@ secrets:
 ```
 
 If `vault` is omitted, the default is `ToolServer`. If `item` is omitted, the
-item defaults to the tool ID.
+Infisical path defaults to the tool ID, with a leading `/` added at request
+time.
 
 ## Initial Hydration
 
-At startup, `toolyardd` resolves each declared secret with the host read-only
-Connect token, starts the container with `/run/secrets` as tmpfs, and streams
-only that tool's secret files into the tmpfs. No hydrated secret values are
-written to persistent host storage.
+At startup, `toolyardd` logs in to Infisical with the machine identity for that
+tool path, starts the container with `/run/secrets` as tmpfs, and streams only
+that tool's secret files into the tmpfs. No hydrated secret values are written
+to persistent host storage.
 
 Tool code reads files normally:
 
@@ -60,7 +62,7 @@ secrets:
     writable: true
 ```
 
-A writable tool receives `/run/toolyard/secrets.sock`, not a 1Password token.
+A writable tool receives `/run/toolyard/secrets.sock`, not an Infisical credential.
 To update the field:
 
 ```bash
@@ -71,20 +73,31 @@ Toolyardd checks the request against that tool's descriptor and patches exactly
 `(vault, item, field)` from the matching `writable: true` entry. Undeclared
 fields, read-only fields, and cross-tool names are denied and audited.
 
-## Host Tokens
+## Host Credentials
 
-Store tokens under `/home/admin/.config/toolstack/tokens` with mode `0600`:
+Store per-path machine identity files under
+`/home/admin/.config/toolstack/infisical` with mode `0600`:
 
-- `op-connect-read.token` - read-only access to `ToolServer`
-- `op-connect-readwrite.token` - read+write access to `ToolServer`
+```
+hello-rest.env
+<tool-path>.env
+```
 
-The read+write token is only used by toolyardd after descriptor allowlist
-checks. It is never mounted into tool containers.
+Each file contains:
+
+```bash
+INFISICAL_CLIENT_ID=...
+INFISICAL_CLIENT_SECRET=...
+```
+
+The credential is only used by toolyardd after descriptor allowlist checks. It
+is never mounted into tool containers.
 
 ## Rotation
 
-- Upstream credential changed by operator: update 1Password, then restart
+- Upstream credential changed by operator: update Infisical, then restart
   `toolyardd` or the affected tool so initial hydration picks it up.
 - Credential changed by the tool: POST the new value to `/run/toolyard/secrets.sock`.
-  The next restart hydrates the latest value from 1Password.
-- Connect token rotation: replace the host token file and restart `toolyardd`.
+  The next restart hydrates the latest value from Infisical.
+- Machine identity rotation: replace the path's local credential file and
+  restart `toolyardd`.

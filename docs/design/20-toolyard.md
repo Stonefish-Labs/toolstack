@@ -2,7 +2,7 @@
 
 Toolyard is the Docker lifecycle layer for Toolstack tools. The long-running
 `toolyardd` process reads `tools/<id>/toolyard.yaml`, starts one Docker
-container per enabled tool, injects initial secrets from 1Password Connect, and
+container per enabled tool, injects initial secrets from Infisical, and
 mediates allowlisted writable secret updates.
 
 Both the broker and toolyard read the same `toolyard.yaml` files. There is no
@@ -13,17 +13,17 @@ separate registry service.
 - Discover and validate tool definitions.
 - Build or pull Docker images.
 - Start each tool bound to `127.0.0.1:<port>`.
-- Fetch declared secrets from 1Password Connect at startup.
+- Fetch declared secrets from Infisical at startup.
 - Inject secret values directly into container tmpfs at `/run/secrets`.
 - For fields declared `writable: true`, expose a per-tool Unix socket at
   `/run/toolyard/secrets.sock`.
 - Enforce writable secret allowlists from the descriptor before patching
-  1Password with the host-held read+write token.
+  Infisical with the tool path's machine identity.
 - Notify the broker to reload its registry after lifecycle changes.
-- Record toolyard-local audit events in `toolyard/state/toolyard-audit.jsonl`.
+- Record toolyard-local audit events in `${XDG_STATE_HOME:-~/.local/state}/toolstack/toolyard-audit.jsonl`.
 
 The toolyard does not authenticate agents, make broker policy decisions, or
-mount 1Password tokens into tool containers.
+mount Infisical credentials into tool containers.
 
 ## Descriptor Schema
 
@@ -53,8 +53,8 @@ runtime-deferred.
 
 For tools with any `secrets[]` entries, toolyardd:
 
-1. Resolves each `(vault, item, field)` from 1Password Connect using the host
-   read-only token.
+1. Resolves each `(vault, item, field)` from Infisical. `vault` is the project,
+   `item` is the secret path, and `field` is the secret key.
 2. Starts the container with a tmpfs mounted at `/run/secrets` and a tiny wait
    wrapper as PID 1.
 3. Streams a tar archive of secret files into that tmpfs with `docker cp -`.
@@ -66,7 +66,7 @@ The hydrated values are never written to persistent host storage.
 ## Writable Secret Updates
 
 A writable field is an explicit capability in `toolyard.yaml`. A container does
-not receive the 1Password write token. Instead, for any tool with writable
+not receive an Infisical credential. Instead, for any tool with writable
 fields, toolyardd mounts a per-tool socket directory at `/run/toolyard`.
 
 Inside the container:
@@ -84,11 +84,12 @@ different vault/item.
 
 | Env | Purpose |
 |---|---|
-| `TOOLYARD_OP_CONNECT_HOST` | 1Password Connect URL |
-| `TOOLYARD_OP_CONNECT_TOKEN_FILE` | Host read-only Connect token |
-| `TOOLYARD_OP_CONNECT_WRITE_TOKEN_FILE` | Host read+write Connect token for allowlisted updates |
+| `TOOLYARD_INFISICAL_HOST` | Infisical base URL |
+| `TOOLYARD_INFISICAL_ENVIRONMENT` | Infisical environment slug, default `prod` |
+| `TOOLYARD_INFISICAL_CREDENTIALS_DIR` | Per-path Universal Auth credentials, default `${XDG_CONFIG_HOME:-~/.config}/toolstack/infisical` |
+| `TOOLYARD_INFISICAL_ORGANIZATION_SLUG` | Optional Infisical organization slug for Universal Auth login |
 | `TOOLYARD_TOOLS_DIR` | Tool definitions, usually `/home/admin/toolstack/tools` |
-| `TOOLYARD_STATE_DIR` | Toolyard audit/state directory |
+| `TOOLYARD_STATE_DIR` | Toolyard audit/state directory, default `${XDG_STATE_HOME:-~/.local/state}/toolstack` |
 | `TOOLYARD_RUNTIME_DIR` | Runtime sockets, usually `/run/toolstack/toolyardd` |
 | `TOOLYARD_BROKER_RELOAD_URL` | Broker registry reload endpoint |
 | `TOOLYARD_BROKER_RELOAD_TOKEN_FILE` | Broker token for registry reload |

@@ -140,3 +140,30 @@ class TestReject:
         result = await client.reject(1, "testuser")
         assert result.status == RequestStatus.REJECTED
         assert result.decision_note is None
+
+
+class TestApprovalMessages:
+    async def test_upsert_get_list_and_delete(self, client, fake_store):
+        fake_store.inject({"tool": "media", "op": "skip"})
+
+        created = await client.upsert_approval_message(1, 5000, "pending_review")
+        assert created.request_id == 1
+        assert created.message_id == 5000
+        assert created.last_status == "pending_review"
+
+        fetched = await client.get_approval_message(1)
+        assert fetched is not None
+        assert fetched.message_id == 5000
+
+        updated = await client.upsert_approval_message(1, 5000, "approved")
+        assert updated.posted_at == created.posted_at
+        assert updated.last_status == "approved"
+
+        messages = await client.list_approval_messages()
+        assert [m.request_id for m in messages] == [1]
+
+        await client.delete_approval_message(1)
+        assert await client.get_approval_message(1) is None
+
+    async def test_get_missing_returns_none(self, client):
+        assert await client.get_approval_message(999) is None

@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from broker import db, policy
+from broker import db
 from broker.dispatch import SyntheticDispatcher
 from broker.lifecycle import handle_action_request, get_request_model
 from broker.models import Caller, RequestStatus
+from tests.conftest import create_test_caller
 
 
 @pytest.mark.asyncio
-async def test_allowed_request_completes(tmp_db, test_config, sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    caller_row = db.create_caller(tmp_db, "agent.test", "home-default")
+async def test_allowed_request_completes(tmp_db, test_config):
+    caller_row = create_test_caller(tmp_db, "agent.test", "home-default")
     caller = Caller(**caller_row)
     dispatcher = SyntheticDispatcher()
 
@@ -34,9 +34,8 @@ async def test_allowed_request_completes(tmp_db, test_config, sample_profiles_di
 
 
 @pytest.mark.asyncio
-async def test_review_request_pending(tmp_db, test_config, sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    caller_row = db.create_caller(tmp_db, "agent.test", "tasks-agent")
+async def test_review_request_pending(tmp_db, test_config):
+    caller_row = create_test_caller(tmp_db, "agent.test", "tasks-agent")
     caller = Caller(**caller_row)
     dispatcher = SyntheticDispatcher()
 
@@ -57,9 +56,8 @@ async def test_review_request_pending(tmp_db, test_config, sample_profiles_dir):
 
 
 @pytest.mark.asyncio
-async def test_denied_request(tmp_db, test_config, sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    caller_row = db.create_caller(tmp_db, "agent.test", "home-default")
+async def test_denied_request(tmp_db, test_config):
+    caller_row = create_test_caller(tmp_db, "agent.test", "home-default")
     caller = Caller(**caller_row)
     dispatcher = SyntheticDispatcher()
 
@@ -79,9 +77,8 @@ async def test_denied_request(tmp_db, test_config, sample_profiles_dir):
 
 
 @pytest.mark.asyncio
-async def test_failed_dispatch(tmp_db, test_config, sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    caller_row = db.create_caller(tmp_db, "agent.test", "home-default")
+async def test_failed_dispatch(tmp_db, test_config):
+    caller_row = create_test_caller(tmp_db, "agent.test", "home-default")
     caller = Caller(**caller_row)
     dispatcher = SyntheticDispatcher()
 
@@ -101,9 +98,8 @@ async def test_failed_dispatch(tmp_db, test_config, sample_profiles_dir):
 
 
 @pytest.mark.asyncio
-async def test_arguments_redacted_in_storage(tmp_db, test_config, sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    caller_row = db.create_caller(tmp_db, "agent.test", "home-default")
+async def test_arguments_redacted_in_storage(tmp_db, test_config):
+    caller_row = create_test_caller(tmp_db, "agent.test", "home-default")
     caller = Caller(**caller_row)
     dispatcher = SyntheticDispatcher()
 
@@ -127,9 +123,8 @@ async def test_arguments_redacted_in_storage(tmp_db, test_config, sample_profile
 
 
 @pytest.mark.asyncio
-async def test_get_request_model(tmp_db, test_config, sample_profiles_dir):
-    policy.load_profiles(sample_profiles_dir)
-    caller_row = db.create_caller(tmp_db, "agent.test", "home-default")
+async def test_get_request_model(tmp_db, test_config):
+    caller_row = create_test_caller(tmp_db, "agent.test", "home-default")
     caller = Caller(**caller_row)
     dispatcher = SyntheticDispatcher()
 
@@ -147,4 +142,3 @@ async def test_get_request_model(tmp_db, test_config, sample_profiles_dir):
     fetched = get_request_model(tmp_db, req.id)
     assert fetched is not None
     assert fetched.caller == "agent.test"
-    assert fetched.profile == "home-default"

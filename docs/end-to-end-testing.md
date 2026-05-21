@@ -7,7 +7,9 @@ reload, and writable-secret proxy behavior.
 
 - Component venvs are installed.
 - `/home/admin/.config/toolstack/*.env` files are filled in.
-- 1Password vault `ToolServer` has item `hello-rest` with field `API_KEY`.
+- Infisical project `ToolServer` has path `/hello-rest` with secret `API_KEY`.
+- `/home/admin/.config/toolstack/infisical/hello-rest.env` contains the
+  Universal Auth machine identity for that path.
 - Broker service is initialized with tokens for `svc.approver`, `svc.toolyard`,
   and `agent.codex`.
 - `broker.service`, `toolyardd.service`, and `discord-approver.service` are
@@ -80,7 +82,7 @@ curl --unix-socket /run/toolyard/secrets.sock \
 ```
 
 Expected: `200 {"ok": true, ...}` and a `secret.update.completed` record in
-`/home/admin/toolstack/toolyard/state/toolyard-audit.jsonl`.
+`/home/admin/.local/state/toolstack/toolyard-audit.jsonl`.
 
 Negative tests:
 
@@ -93,26 +95,34 @@ curl --unix-socket /run/toolyard/secrets.sock \
 
 Expected: `403` unless `client_id` is also declared `writable: true`.
 
-Verify no Connect token is present in the container:
+Verify no Infisical credential is present in the container:
 
 ```bash
-docker exec toolyard-<id> env | grep OP_CONNECT || true
-docker exec toolyard-<id> sh -c 'find /run -name "*connect*" -o -name "*token*"'
+docker exec toolyard-<id> env | grep INFISICAL || true
+docker exec toolyard-<id> sh -c 'find /run -name "*infisical*" -o -name "*token*"'
 ```
 
-Expected: no 1Password Connect token file or env var.
+Expected: no Infisical credential file or env var.
 
 ## 6. Approval Flow
 
-Temporarily move `hello-rest.greet` from `allowed_ops` to `review_ops` in
-`broker/policies/profiles/home-default.yaml`, then reload:
+Temporarily change the caller's policy so `hello-rest.greet` is set to
+`review`. The easiest path is the broker panel at
+`https://agent-toolserver.<your-tailnet>.ts.net:8443`: open the caller,
+change the operation effect, and save.
+
+The same change can be made through the admin API with a caller that has
+`broker.admin.callers.write`. Fetch the current policy first because `PUT`
+replaces the whole policy document:
 
 ```bash
-curl -X POST -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/tokens/broker-registry-admin.token)"   http://127.0.0.1:8765/v1/registry/reload
+curl -s \
+  -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/tokens/broker-panel.token)" \
+  http://127.0.0.1:8765/v1/admin/callers/agent.codex/policy | jq
 ```
 
 Trigger the action again. Expected: broker returns `202 pending_review`, Discord
 posts a card, approval completes the request, and broker audit shows the full
 transition chain.
 
-Revert the temporary policy change after the test.
+Revert the temporary caller policy change after the test.

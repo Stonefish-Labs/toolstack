@@ -28,8 +28,6 @@ downstream secrets out of the agent host.
 
 - [`design/01-architecture.md`](design/01-architecture.md) explains the broker,
   Toolyard, Discord approver, tool containers, and trust boundaries.
-- [`design/50-migration.md`](design/50-migration.md) records what was lifted,
-  dropped, or deferred from the older monolithic approach.
 
 ## Component Specs
 
@@ -40,7 +38,7 @@ downstream secrets out of the agent host.
 - [`design/21-tool-template.md`](design/21-tool-template.md) shows how to build a
   server-side tool.
 - [`design/22-agent-skill-convention.md`](design/22-agent-skill-convention.md)
-  describes the matching thin client skill: broker-tool/profile config, stable
+  describes the matching thin client skill: broker caller config, stable
   CLI entry points, and direct broker action calls.
 - [`design/30-approver-discord.md`](design/30-approver-discord.md) specifies the
   human approval surface.
@@ -62,10 +60,3 @@ downstream secrets out of the agent host.
 - [`design/decisions/004-secrets-at-workload.md`](design/decisions/004-secrets-at-workload.md)
 - [`design/decisions/005-policy-simple-now.md`](design/decisions/005-policy-simple-now.md)
 - [`design/decisions/006-discord-approval.md`](design/decisions/006-discord-approval.md)
-
-## History
-
-[`history/`](history/) contains archived implementation plans from earlier build
-slices. They are useful for context, but they are not current guidance. Prefer
-the README files and active design docs above when operating or extending the
-system.

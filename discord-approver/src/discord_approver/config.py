@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     broker_url: str = Field(alias="APPROVER_BROKER_URL")
 
     # Optional with defaults
-    state_dir: Path = Field(default=Path("./state"), alias="APPROVER_STATE_DIR")
     poll_interval: float = Field(default=10.0, alias="APPROVER_POLL_INTERVAL_SECONDS")
     max_terminal_messages: int = Field(default=25, alias="APPROVER_MAX_TERMINAL_MESSAGES")
     allowed_user_ids_raw: str = Field(default="", alias="APPROVER_ALLOWED_USER_IDS")

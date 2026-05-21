@@ -7,6 +7,7 @@ Step-by-step verification of the broker service.
 ```bash
 cd broker/
 source .venv/bin/activate
+export BROKER_TOOLS_DIR=../tools
 ```
 
 ## 1. Setup
@@ -16,20 +17,29 @@ source .venv/bin/activate
 brokerctl init-db
 # Expected: "database initialized at ./state/broker.sqlite3"
 
-# Verify policy profiles load
+# Verify tool descriptors load
 brokerctl reload-registry
-# Expected: "registry reloaded: 0 tool(s), 3 profile(s)"
+# Expected: "registry reloaded: <n> tool(s)"
 ```
 
 ## 2. Token Creation
 
 ```bash
 # Create an agent caller
-brokerctl create-caller --name agent.hermes --profile home-default
+brokerctl create-caller \
+  --name agent.hermes \
+  --allow hello-rest.greet \
+  --review time-mcp.time_in \
+  --ttl 3600
 # Save the printed BEARER TOKEN
 
 # Create a bot caller
-brokerctl create-caller --name bot.approver --profile approver
+brokerctl create-caller \
+  --name bot.approver \
+  --broker-op broker.approve \
+  --broker-op broker.reject \
+  --broker-op broker.list_requests \
+  --broker-op broker.audit
 # Save the printed BEARER TOKEN
 
 # Verify callers exist
@@ -59,12 +69,12 @@ curl -s -X POST \
   -d '{"arguments": {}, "reason": "smoke test"}'
 # Expected: 200 with synthetic result
 
-# Test review-required action (write)
+# Test review-required action
 curl -s -X POST \
   -H "Authorization: Bearer $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
-  http://127.0.0.1:8765/v1/actions/calendar.create_event \
-  -d '{"arguments": {}, "reason": "create test event"}'
+  http://127.0.0.1:8765/v1/actions/time-mcp.time_in \
+  -d '{"arguments": {"timezone": "UTC"}, "reason": "review test"}'
 # Expected: 202 with request_id and status=pending_review
 
 # Test denied action
@@ -98,8 +108,8 @@ curl -s -X POST \
 curl -s -X POST \
   -H "Authorization: Bearer $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
-  http://127.0.0.1:8765/v1/actions/calendar.create_event \
-  -d '{"arguments": {}, "reason": "test approval"}'
+  http://127.0.0.1:8765/v1/actions/time-mcp.time_in \
+  -d '{"arguments": {"timezone": "UTC"}, "reason": "test approval"}'
 # Note the request_id from the response
 
 # List pending requests
@@ -123,8 +133,8 @@ BROKER_APPROVAL_TIMEOUT_SECONDS=10 brokerctl serve
 curl -s -X POST \
   -H "Authorization: Bearer $AGENT_TOKEN" \
   -H "Content-Type: application/json" \
-  http://127.0.0.1:8765/v1/actions/calendar.create_event \
-  -d '{"arguments": {}}'
+  http://127.0.0.1:8765/v1/actions/time-mcp.time_in \
+  -d '{"arguments": {"timezone": "UTC"}}'
 
 # Wait 15 seconds, then check
 sleep 15

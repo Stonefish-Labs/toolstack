@@ -7,17 +7,17 @@ import time
 
 import pytest
 
-from broker import db, policy
+from broker import db
 from broker.approval import approve_request, reject_request
 from broker.dispatch import SyntheticDispatcher
 from broker.lifecycle import handle_action_request
 from broker.models import Caller, RequestStatus
+from tests.conftest import create_test_caller
 
 
-async def _create_pending_request(tmp_db, test_config, sample_profiles_dir):
+async def _create_pending_request(tmp_db, test_config):
     """Helper: create a pending_review request and return (caller, request)."""
-    policy.load_profiles(sample_profiles_dir)
-    caller_row = db.create_caller(tmp_db, "agent.test", "tasks-agent")
+    caller_row = create_test_caller(tmp_db, "agent.test", "tasks-agent")
     caller = Caller(**caller_row)
     dispatcher = SyntheticDispatcher()
 
@@ -36,8 +36,8 @@ async def _create_pending_request(tmp_db, test_config, sample_profiles_dir):
 
 
 @pytest.mark.asyncio
-async def test_approve_pending_request(tmp_db, test_config, sample_profiles_dir):
-    _, req = await _create_pending_request(tmp_db, test_config, sample_profiles_dir)
+async def test_approve_pending_request(tmp_db, test_config):
+    _, req = await _create_pending_request(tmp_db, test_config)
     dispatcher = SyntheticDispatcher()
 
     result = await approve_request(
@@ -56,8 +56,8 @@ async def test_approve_pending_request(tmp_db, test_config, sample_profiles_dir)
 
 
 @pytest.mark.asyncio
-async def test_reject_pending_request(tmp_db, test_config, sample_profiles_dir):
-    _, req = await _create_pending_request(tmp_db, test_config, sample_profiles_dir)
+async def test_reject_pending_request(tmp_db, test_config):
+    _, req = await _create_pending_request(tmp_db, test_config)
 
     result = await reject_request(
         request_id=req.id,
@@ -73,8 +73,8 @@ async def test_reject_pending_request(tmp_db, test_config, sample_profiles_dir):
 
 
 @pytest.mark.asyncio
-async def test_approve_already_completed_is_noop(tmp_db, test_config, sample_profiles_dir):
-    _, req = await _create_pending_request(tmp_db, test_config, sample_profiles_dir)
+async def test_approve_already_completed_is_noop(tmp_db, test_config):
+    _, req = await _create_pending_request(tmp_db, test_config)
     dispatcher = SyntheticDispatcher()
 
     # Approve once
@@ -93,8 +93,8 @@ async def test_approve_already_completed_is_noop(tmp_db, test_config, sample_pro
 
 
 @pytest.mark.asyncio
-async def test_reject_already_rejected_is_noop(tmp_db, test_config, sample_profiles_dir):
-    _, req = await _create_pending_request(tmp_db, test_config, sample_profiles_dir)
+async def test_reject_already_rejected_is_noop(tmp_db, test_config):
+    _, req = await _create_pending_request(tmp_db, test_config)
 
     await reject_request(
         request_id=req.id, approver="human", reason="no",
@@ -109,10 +109,9 @@ async def test_reject_already_rejected_is_noop(tmp_db, test_config, sample_profi
 
 
 @pytest.mark.asyncio
-async def test_approve_expired_request_fails(tmp_db, sample_profiles_dir):
+async def test_approve_expired_request_fails(tmp_db):
     """Cannot approve a request that has already expired."""
-    policy.load_profiles(sample_profiles_dir)
-    caller_row = db.create_caller(tmp_db, "agent.test", "tasks-agent")
+    caller_row = create_test_caller(tmp_db, "agent.test", "tasks-agent")
     now = int(time.time())
 
     # Create a request that expired in the past
@@ -158,8 +157,8 @@ async def test_approve_nonexistent_returns_none(tmp_db, test_config):
 
 
 @pytest.mark.asyncio
-async def test_approve_creates_grant(tmp_db, test_config, sample_profiles_dir):
-    _, req = await _create_pending_request(tmp_db, test_config, sample_profiles_dir)
+async def test_approve_creates_grant(tmp_db, test_config):
+    _, req = await _create_pending_request(tmp_db, test_config)
     dispatcher = SyntheticDispatcher()
 
     await approve_request(

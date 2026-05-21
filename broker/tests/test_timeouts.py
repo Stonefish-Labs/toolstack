@@ -13,7 +13,7 @@ from broker.models import RequestStatus
 
 @pytest.mark.asyncio
 async def test_expire_pending_requests(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.exp", "p")
+    caller = db.create_caller(tmp_db, "agent.exp")
     now = int(time.time())
 
     # Not yet expired
@@ -59,7 +59,7 @@ async def test_expire_nothing_when_none_pending(tmp_db):
 
 @pytest.mark.asyncio
 async def test_already_expired_not_double_counted(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.de", "p")
+    caller = db.create_caller(tmp_db, "agent.de")
     now = int(time.time())
 
     db.create_request(

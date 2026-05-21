@@ -23,7 +23,7 @@ import json
 import logging
 import sys
 
-from broker import db, tokens, audit
+from broker import audit, db, policy, registry, tokens
 from broker.config import load_config
 from broker.dispatch import SyntheticDispatcher
 
@@ -41,7 +41,32 @@ def main(argv: list[str] | None = None) -> None:
     # create-caller
     p = sub.add_parser("create-caller", help="Register a caller and print raw token")
     p.add_argument("--name", required=True, help="Caller name (e.g. agent.hermes)")
-    p.add_argument("--profile", required=True, help="Profile name (e.g. home-default)")
+    p.add_argument(
+        "--allow",
+        action="append",
+        default=[],
+        metavar="TOOL.OP",
+        help="Grant a tool operation without review; repeatable",
+    )
+    p.add_argument(
+        "--review",
+        action="append",
+        default=[],
+        metavar="TOOL.OP",
+        help="Send a tool operation to approval review; repeatable",
+    )
+    p.add_argument(
+        "--broker-op",
+        action="append",
+        default=[],
+        metavar="broker.OP",
+        help="Grant a broker control operation; repeatable",
+    )
+    p.add_argument("--ttl", type=int, default=None, help="Auto-grant TTL seconds")
+
+    # refresh-token
+    p = sub.add_parser("refresh-token", help="Revoke a caller's active tokens and issue a new one")
+    p.add_argument("name", help="Caller name")
 
     # list-callers
     p = sub.add_parser("list-callers", help="Show registered callers")
@@ -99,7 +124,9 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "init-db":
         _cmd_init_db(config)
     elif args.command == "create-caller":
-        _cmd_create_caller(config, args.name, args.profile)
+        _cmd_create_caller(config, args.name, args.allow, args.review, args.broker_op, args.ttl)
+    elif args.command == "refresh-token":
+        _cmd_refresh_token(config, args.name)
     elif args.command == "list-callers":
         _cmd_list_callers(config, args.as_json, args.include_revoked)
     elif args.command == "revoke-caller":
@@ -128,10 +155,49 @@ def _cmd_init_db(config):
     print(f"database initialized at {config.db_path}")
 
 
-def _cmd_create_caller(config, name: str, profile: str):
+def _policy_from_cli(
+    *,
+    allow_ops: list[str],
+    review_ops: list[str],
+    broker_ops: list[str],
+    ttl: int | None,
+) -> dict:
+    tools: dict[str, dict[str, dict[str, str]]] = {}
+    for effect, values in (("allow", allow_ops), ("review", review_ops)):
+        for value in values:
+            try:
+                tool, op = value.rsplit(".", 1)
+            except ValueError:
+                raise ValueError(f"tool operation must be TOOL.OP: {value}") from None
+            tools.setdefault(tool, {"operations": {}})["operations"][op] = effect
+    for broker_op in broker_ops:
+        if not broker_op.startswith("broker."):
+            raise ValueError(f"broker operation must start with broker.: {broker_op}")
+    return policy.normalize_policy({
+        "tools": tools,
+        "broker_ops": broker_ops,
+        "auto_grant_ttl_seconds": ttl,
+    })
+
+
+def _cmd_create_caller(
+    config,
+    name: str,
+    allow_ops: list[str],
+    review_ops: list[str],
+    broker_ops: list[str],
+    ttl: int | None,
+):
     conn = db.init_db(config.db_path)
     try:
-        caller_row = db.create_caller(conn, name, profile)
+        caller_policy = _policy_from_cli(
+            allow_ops=allow_ops,
+            review_ops=review_ops,
+            broker_ops=broker_ops,
+            ttl=ttl,
+        )
+        caller_row = db.create_caller(conn, name)
+        policy.upsert_policy(conn, caller_row["id"], caller_policy)
     except Exception as e:
         print(f"error: {e}", file=sys.stderr)
         conn.close()
@@ -141,11 +207,11 @@ def _cmd_create_caller(config, name: str, profile: str):
     audit.record(
         conn, "token.created",
         caller_id=caller_row["id"],
-        detail={"caller": name, "profile": profile, "hash_prefix": hash_prefix},
+        detail={"caller": name, "hash_prefix": hash_prefix},
     )
     conn.close()
 
-    print(f"caller created: {name} (profile={profile}, id={caller_row['id']})")
+    print(f"caller created: {name} (id={caller_row['id']})")
     print()
     print("=" * 60)
     print("  BEARER TOKEN (save this — it will NOT be shown again):")
@@ -165,11 +231,11 @@ def _cmd_list_callers(config, as_json: bool, include_revoked: bool):
         if not callers:
             print("no callers found")
             return
-        print(f"{'ID':<6} {'Name':<25} {'Profile':<20} {'Revoked':<10}")
-        print("-" * 65)
+        print(f"{'ID':<6} {'Name':<32} {'Revoked':<10}")
+        print("-" * 52)
         for c in callers:
             revoked = "yes" if c.get("revoked_at") else "no"
-            print(f"{c['id']:<6} {c['name']:<25} {c['profile']:<20} {revoked:<10}")
+            print(f"{c['id']:<6} {c['name']:<32} {revoked:<10}")
 
 
 def _cmd_revoke_caller(config, name: str):
@@ -196,12 +262,38 @@ def _cmd_list_tokens(config, as_json: bool, include_revoked: bool):
         if not toks:
             print("no tokens found")
             return
-        print(f"{'Hash Prefix':<12} {'Caller':<25} {'Profile':<20} {'Revoked':<10}")
-        print("-" * 70)
+        print(f"{'Hash Prefix':<12} {'Caller':<32} {'Revoked':<10}")
+        print("-" * 58)
         for t in toks:
             revoked = "yes" if t.get("revoked_at") else "no"
             prefix = t["token_hash"][:8]
-            print(f"{prefix:<12} {t['caller_name']:<25} {t['profile']:<20} {revoked:<10}")
+            print(f"{prefix:<12} {t['caller_name']:<32} {revoked:<10}")
+
+
+def _cmd_refresh_token(config, name: str):
+    conn = db.init_db(config.db_path)
+    caller = db.get_caller_by_name(conn, name)
+    if caller is None or caller.get("revoked_at") is not None:
+        print(f"caller '{name}' not found or revoked", file=sys.stderr)
+        conn.close()
+        sys.exit(1)
+    revoked = db.revoke_tokens_for_caller(conn, caller["id"])
+    raw_token, hash_prefix = tokens.create_token_for_caller(conn, caller["id"])
+    audit.record(
+        conn,
+        "token.refreshed",
+        caller_id=caller["id"],
+        detail={"caller": name, "revoked": revoked, "hash_prefix": hash_prefix},
+    )
+    conn.close()
+
+    print(f"caller token refreshed: {name} ({revoked} old token(s) revoked)")
+    print()
+    print("=" * 60)
+    print("  BEARER TOKEN (save this — it will NOT be shown again):")
+    print(f"  {raw_token}")
+    print(f"  hash prefix: {hash_prefix}")
+    print("=" * 60)
 
 
 def _cmd_revoke_token(config, prefix: str):
@@ -314,10 +406,8 @@ def _cmd_audit(config, after_id: int | None, limit: int, as_json: bool):
 
 
 def _cmd_reload_registry(config):
-    from broker import registry, policy
     tools = registry.load_registry(config.tools_dir)
-    profiles = policy.load_profiles(config.policies_dir)
-    print(f"registry reloaded: {len(tools)} tool(s), {len(profiles)} profile(s)")
+    print(f"registry reloaded: {len(tools)} tool(s)")
 
 
 def _cmd_serve(config, bind_override: str | None):

@@ -20,7 +20,7 @@ Broker (HTTP API)
    │                   │  - Posts approval embeds with 4 buttons
    │                   │  - Handles button interactions + modals
    │                   │  - Edits messages on state change
-   │                   │  - State: request_id ↔ message_id mapping
+   │                   │  - Broker-backed request_id ↔ message_id mapping
    └─────────┬─────────┘
              │
         Discord API
@@ -29,7 +29,8 @@ Broker (HTTP API)
        Channel #approvals
 ```
 
-Single process. Stateless except for the `request_id ↔ message_id` mapping (small SQLite or JSON file).
+Single process. No local persistent state; the broker stores the
+`request_id ↔ message_id` mapping in its SQLite database.
 
 ## Approval card
 
@@ -39,7 +40,7 @@ For each `pending_review` request, the bot posts an embed:
 ─────────────────────────────────────────────────
  Approval needed: media.skip_track
 ─────────────────────────────────────────────────
- Caller:    agent.hermes (profile: home-default)
+ Caller:    agent.hermes
  Tool:      demo-writer
  Operation: update_setting
  Risk:      write
@@ -124,12 +125,13 @@ This is intentionally simple. Webhook delivery from the broker can be added late
 
 ### On bot startup
 
-1. Read state file → list of `request_id ↔ message_id` mappings.
+1. Read broker-backed `request_id ↔ message_id` mappings.
 2. Poll broker for *all* `pending_review` requests.
 3. For any pending request without a message in our state: post a new card.
 4. For any message in our state whose request is no longer pending: edit it to reflect the current state.
 
-This makes the bot recoverable from any state-file loss: the broker is canonical.
+This makes the bot recoverable from Discord bot restarts without a second
+database: the broker is canonical.
 
 ## Configuration
 
@@ -137,7 +139,7 @@ Env vars:
 
 | Var | Purpose |
 |---|---|
-| `APPROVER_DISCORD_TOKEN_FILE` | Mounted Connect token file; bot uses it to fetch its Discord token from 1Password |
+| `APPROVER_DISCORD_TOKEN_FILE` | File containing the Discord bot token |
 | `APPROVER_DISCORD_CHANNEL_ID` | Where to post approval cards |
 | `APPROVER_BROKER_URL` | e.g. `http://127.0.0.1:8765` (broker is on the same host) |
 | `APPROVER_BROKER_TOKEN_FILE` | Mounted file containing the bot's broker token (caller `bot.approver`) |
@@ -145,36 +147,33 @@ Env vars:
 | `APPROVER_ALLOWED_USER_IDS` | Comma-separated Discord user IDs allowed to approve/reject |
 | `APPROVER_ALLOWED_ROLE_IDS` | Comma-separated Discord role IDs allowed to approve/reject |
 | `APPROVER_POLL_INTERVAL_SECONDS` | Default 10 |
-| `APPROVER_STATE_DIR` | Where to keep the `messages.sqlite3` mapping |
 
-The bot resolves its Discord token at startup via `op-connect-shim`:
+The Discord bot does not keep local persistent state. It records approval-card
+message mappings through the broker, which stores them in broker SQLite state.
 
-```python
-op = OnePasswordConnect()  # reads APPROVER_DISCORD_TOKEN_FILE-equivalent
-discord_token = op.get_field(vault="Broker", item="discord-bot", field="BOT_TOKEN")
-```
+The bot reads its Discord token from the host-side file configured in
+`DISCORD_APPROVER_TOKEN_FILE`.
 
 ## Broker-side setup
 
-The bot needs a broker token to call approve/reject, plus a shared HMAC signing secret if the broker has `BROKER_APPROVER_SIGNING_SECRET_FILE` configured. Create a dedicated caller:
+The bot needs a broker token to call approve/reject, plus a shared HMAC signing
+secret if the broker has `BROKER_APPROVER_SIGNING_SECRET_FILE` configured.
+Create a dedicated caller with approval broker ops:
 
 ```sh
-brokerctl create-caller --name bot.approver --profile approver
+brokerctl create-caller --name bot.approver \
+  --broker-op broker.approve \
+  --broker-op broker.reject \
+  --broker-op broker.list_requests \
+  --broker-op broker.audit \
+  --broker-op broker.approval_messages.read \
+  --broker-op broker.approval_messages.write
 ```
 
-Then `policies/profiles/approver.yaml`:
-
-```yaml
-profile: approver
-# Only allow calling approval endpoints; no /v1/actions
-allowed_ops:
-  - "broker.approve"
-  - "broker.reject"
-  - "broker.list_requests"
-  - "broker.audit"
-```
-
-The broker recognizes these special internal "ops" as authorization for the approval HTTP endpoints (`POST /v1/requests/<id>/approve` etc.), not as forwardable actions. `broker.registry.reload` belongs to the separate `registry-admin` profile used by `toolyardd`, not to the Discord bot.
+These special internal ops authorize approval HTTP endpoints
+(`POST /v1/requests/<id>/approve` etc.), not forwardable tool actions.
+`broker.registry.reload` belongs to the separate `svc.toolyard` caller, not the
+Discord bot.
 
 ## Permissions on Discord
 
@@ -196,7 +195,7 @@ No server-wide permissions. No DM permissions.
 | Discord 5xx | Retry with backoff; log; broker timeout still triggers |
 | Broker unreachable | Retry; log loudly; bot is dead-in-the-water without broker but doesn't crash |
 | Modal submission with invalid data | Discord enforces client-side; broker validates server-side and returns 400; bot reports error in the channel |
-| State file lost | Recover on startup by re-polling the broker (see "On bot startup") |
+| Broker message mapping missing | Re-post any still-pending request on startup; broker request state remains canonical |
 
 ## What's deliberately small
 
@@ -212,12 +211,13 @@ The bot is not a generic Discord framework:
 
 Bulk approval (`/approve-all`, batching by tool) is a clear v2 if volume justifies it, but starts simple.
 
-## Replacement / parallel channels
+## Replacement channels
 
 Because the bot is a separate process, you can:
 
-- Run two bots (Discord + ntfy) in parallel for redundancy. Each polls independently; whichever calls approve/reject first wins (broker rejects the duplicate).
-- Replace Discord with a custom mobile push channel later without touching the broker.
-- Add a desktop menu-bar app as an additional surface using the same broker API.
+- Replace Discord with a custom mobile push channel later by adding a new broker-backed message surface.
+- Add a desktop menu-bar app later using the same broker API.
+
+V1 intentionally supports one active approval surface per request.
 
 The broker's API is the stable contract; the human surface is interchangeable.

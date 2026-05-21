@@ -35,7 +35,6 @@ class Request(BaseModel):
 
     id: int
     caller: str  # e.g. "agent.hermes"
-    profile: str  # e.g. "home-default"
     tool: str  # e.g. "media"
     op: str  # e.g. "skip_track"
     arguments: dict = {}  # secrets already stripped by broker
@@ -51,6 +50,7 @@ class StoredMessage(BaseModel):
     """A record of a Discord message posted for an action request."""
 
     request_id: int
+    surface: str = "discord"
     message_id: int
     last_status: str
     posted_at: int

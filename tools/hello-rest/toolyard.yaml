@@ -20,3 +20,4 @@ healthcheck:
 operations:
   - op: greet
     risk: read
+    description: Return a test greeting and verify the REST tool path works.

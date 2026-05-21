@@ -9,9 +9,8 @@ from broker import db
 
 
 def test_create_and_get_caller(tmp_db):
-    row = db.create_caller(tmp_db, "agent.test", "home-default")
+    row = db.create_caller(tmp_db, "agent.test")
     assert row["name"] == "agent.test"
-    assert row["profile"] == "home-default"
     assert row["revoked_at"] is None
 
     fetched = db.get_caller_by_id(tmp_db, row["id"])
@@ -22,7 +21,7 @@ def test_create_and_get_caller(tmp_db):
 
 
 def test_revoke_caller(tmp_db):
-    db.create_caller(tmp_db, "agent.rev", "home-default")
+    db.create_caller(tmp_db, "agent.rev")
     assert db.revoke_caller(tmp_db, "agent.rev")
     caller = db.get_caller_by_name(tmp_db, "agent.rev")
     assert caller["revoked_at"] is not None
@@ -32,8 +31,8 @@ def test_revoke_caller(tmp_db):
 
 
 def test_list_callers_filters_revoked(tmp_db):
-    db.create_caller(tmp_db, "active", "p")
-    db.create_caller(tmp_db, "revoked", "p")
+    db.create_caller(tmp_db, "active")
+    db.create_caller(tmp_db, "revoked")
     db.revoke_caller(tmp_db, "revoked")
 
     active = db.list_callers(tmp_db, include_revoked=False)
@@ -45,7 +44,7 @@ def test_list_callers_filters_revoked(tmp_db):
 
 
 def test_token_crud(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.tok", "p")
+    caller = db.create_caller(tmp_db, "agent.tok")
     tok = db.create_token(tmp_db, caller["id"], "abc123hash")
     assert tok["token_hash"] == "abc123hash"
     assert tok["revoked_at"] is None
@@ -56,7 +55,7 @@ def test_token_crud(tmp_db):
 
 
 def test_revoke_token_by_prefix(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.rp", "p")
+    caller = db.create_caller(tmp_db, "agent.rp")
     db.create_token(tmp_db, caller["id"], "deadbeef1234")
     count = db.revoke_token(tmp_db, "deadbeef")
     assert count == 1
@@ -66,7 +65,7 @@ def test_revoke_token_by_prefix(tmp_db):
 
 
 def test_request_crud(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.req", "p")
+    caller = db.create_caller(tmp_db, "agent.req")
     row = db.create_request(
         tmp_db,
         caller_id=caller["id"],
@@ -95,7 +94,7 @@ def test_request_crud(tmp_db):
 
 
 def test_list_requests_with_filters(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.lr", "p")
+    caller = db.create_caller(tmp_db, "agent.lr")
     for i in range(5):
         db.create_request(
             tmp_db,
@@ -119,7 +118,7 @@ def test_list_requests_with_filters(tmp_db):
 
 
 def test_find_expired_pending(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.exp", "p")
+    caller = db.create_caller(tmp_db, "agent.exp")
     now = int(time.time())
 
     # Not expired
@@ -151,7 +150,7 @@ def test_find_expired_pending(tmp_db):
 
 
 def test_approval_crud(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.ap", "p")
+    caller = db.create_caller(tmp_db, "agent.ap")
     req = db.create_request(
         tmp_db,
         caller_id=caller["id"],
@@ -166,8 +165,51 @@ def test_approval_crud(tmp_db):
     assert len(approvals) == 1
 
 
+def test_approval_message_crud(tmp_db):
+    caller = db.create_caller(tmp_db, "agent.msg")
+    req = db.create_request(
+        tmp_db,
+        caller_id=caller["id"],
+        tool="t", op="a", args_json="{}",
+        reason=None, status="pending_review", policy_decision="{}",
+    )
+
+    row = db.upsert_approval_message(
+        tmp_db,
+        req["id"],
+        surface="discord",
+        message_id=12345,
+        last_status="pending_review",
+    )
+    assert row["request_id"] == req["id"]
+    assert row["message_id"] == 12345
+    assert row["last_status"] == "pending_review"
+
+    updated = db.upsert_approval_message(
+        tmp_db,
+        req["id"],
+        surface="discord",
+        message_id=12345,
+        last_status="completed",
+    )
+    assert updated["posted_at"] == row["posted_at"]
+    assert updated["updated_at"] >= row["updated_at"]
+    assert updated["last_status"] == "completed"
+
+    fetched = db.get_approval_message(tmp_db, req["id"])
+    assert fetched is not None
+    assert fetched["message_id"] == 12345
+
+    all_messages = db.list_approval_messages(tmp_db, surface="discord")
+    assert [m["request_id"] for m in all_messages] == [req["id"]]
+
+    assert db.delete_approval_message(tmp_db, req["id"]) is True
+    assert db.get_approval_message(tmp_db, req["id"]) is None
+    assert db.delete_approval_message(tmp_db, req["id"]) is False
+
+
 def test_grant_crud(tmp_db):
-    caller = db.create_caller(tmp_db, "agent.gr", "p")
+    caller = db.create_caller(tmp_db, "agent.gr")
     now = int(time.time())
 
     grant = db.create_grant(tmp_db, caller["id"], "media", "skip", now + 3600)

@@ -7,7 +7,7 @@ This document describes the four-component shape of the toolserver system and th
 ```
               ┌────────────────────────────────────────────────────┐
               │  Agent host (Hermes / Codex / Claude / ...)        │
-              │  Holds: broker bearer token (caller + profile)     │
+              │  Holds: broker bearer token (caller identity)      │
               └────────────────────────┬───────────────────────────┘
                                        │  HTTPS over Tailscale
                                        ▼
@@ -42,10 +42,10 @@ This document describes the four-component shape of the toolserver system and th
                                                            │ at container start
                                                            ▼
                                               ┌─────────────────────┐
-                                              │ 1Password Connect   │
-                                              │ (toolyard: one      │
-                                              │  scoped read token  │
-                                              │  to ToolServer vault)    │
+                                              │ Infisical           │
+                                              │ (toolyard: per-path │
+                                              │  machine identity   │
+                                              │  to ToolServer)     │
                                               └─────────────────────┘
 ```
 
@@ -69,7 +69,7 @@ HTTP surface:
 - `POST /v1/requests/<id>/reject`
 - `GET  /v1/audit` — recent audit events
 
-Storage: single SQLite at `broker/state/broker.sqlite3`.
+Storage: single SQLite at `${XDG_STATE_HOME:-~/.local/state}/toolstack/broker/broker.sqlite3`.
 
 Target size: 500–800 LOC of Python.
 
@@ -106,21 +106,24 @@ Lifecycle commands:
 
 Both the broker and toolyard read the same `toolyard.yaml` files. There is no separate registry service. The broker may cache the registry in memory and reload it on a SIGHUP or HTTP poke.
 
-The toolyard is also the per-tool secrets boundary: it has one Connect token with read access to the shared `ToolServer` vault and injects only that tool's fields into container tmpfs at startup. See [ADR 003](decisions/003-docker-sandboxing.md) for Docker and [`40-secrets.md`](40-secrets.md) for secrets handling.
+The toolyard is also the per-tool secrets boundary: it uses per-path Infisical
+machine identities for the shared `ToolServer` project and injects only that
+tool's fields into container tmpfs at startup. See [ADR 003](decisions/003-docker-sandboxing.md) for Docker and [`40-secrets.md`](40-secrets.md) for secrets handling.
 
 ### Discord Approver Bot
 
 Role: human-in-the-loop interface for pending approvals.
 
 For each `pending_review` request, the bot posts a channel message with:
-- Caller, profile, tool, operation
+- Caller, tool, operation, caller policy decision
 - Argument summary (secrets stripped)
 - Risk class from the policy decision
 - Four buttons: **Approve** / **Approve+Note** / **Reject** / **Reject+Reason**
 
 Discord modals collect the optional note / required reason. The bot calls the broker's approve/reject endpoint with the result. On state change (approved, rejected, timed-out, expired), the bot edits the original message to show the outcome.
 
-Storage: a small `request_id ↔ message_id` mapping. Otherwise stateless.
+Storage: no local persistent state. The bot records its `request_id ↔ message_id`
+mapping through the broker.
 
 See [ADR 006](decisions/006-discord-approval.md).
 
@@ -129,11 +132,11 @@ See [ADR 006](decisions/006-discord-approval.md).
 Not a service. A convention enforced by the toolyard.
 
 At container start, the toolyard:
-- Uses its own Connect token to read the relevant fields from the shared `ToolServer` vault.
+- Uses its own Infisical machine identity to read the relevant fields from the shared `ToolServer` project.
 - Injects the resolved values into container tmpfs at `/run/secrets/<name>`.
 - For writable fields, mounts only that tool's `/run/toolyard/secrets.sock` proxy path.
 
-Tool code reads `/run/secrets/<name>`. Writable fields use `/run/toolyard/secrets.sock`; no Connect token is mounted in the container. Toolyardd is the per-tool scoping boundary inside the shared `ToolServer` vault.
+Tool code reads `/run/secrets/<name>`. Writable fields use `/run/toolyard/secrets.sock`; no Infisical credential is mounted in the container. Toolyardd is the per-tool scoping boundary inside the shared `ToolServer` project.
 
 The broker is not in this path. The broker does not see, proxy, or cache upstream credentials.
 
@@ -143,10 +146,10 @@ See [ADR 004](decisions/004-secrets-at-workload.md) and [`40-secrets.md`](40-sec
 
 | From → To | Path | Auth |
 |---|---|---|
-| Agent → Broker | Tailscale Serve | Bearer token (per agent+profile, see [ADR 001](decisions/001-token-granularity.md)) |
+| Agent → Broker | Tailscale Serve | Bearer token for one caller |
 | Broker → Tool server | localhost HTTP/JSON-RPC | Optional shared secret per tool (defense in depth) |
-| Toolyard → 1Password Connect | HTTP to Connect | Read-only token for hydration; read+write token for toolyardd-mediated allowlisted updates. Both scoped to `ToolServer` and kept on the host |
-| Tool server → 1Password Connect | none | Tool containers never receive Connect tokens; writable fields go through toolyardd's per-tool Unix socket |
+| Toolyard → Infisical | HTTP to Infisical | Per-path Universal Auth machine identities kept on the host |
+| Tool server → Infisical | none | Tool containers never receive Infisical credentials; writable fields go through toolyardd's per-tool Unix socket |
 | Tool server → downstream API | Whatever the API requires | Credentials read from `/run/secrets/<name>` |
 | Discord bot → Broker | localhost | Bot-specific broker token plus HMAC signing secret; Discord users are allowlisted by user ID and/or role ID before decisions are sent |
 | Operator → Broker | CLI on broker host | Direct SQLite / `brokerctl` |
@@ -156,8 +159,8 @@ See [ADR 004](decisions/004-secrets-at-workload.md) and [`40-secrets.md`](40-sec
 ### Happy path: auto-allowed read
 
 1. Agent: `POST /v1/actions/media.get_playback_state` with bearer.
-2. Broker: authenticate token → caller + profile.
-3. Broker: evaluate policy → profile allows tool `media`, op `get_playback_state` → allow.
+2. Broker: authenticate token → caller.
+3. Broker: evaluate caller policy → allows tool `media`, op `get_playback_state` → allow.
 4. Broker: look up `media` in registry → `http://127.0.0.1:4502`. Forward HTTP request.
 5. Tool: executes (uses Media creds read from `/run/secrets/`). Returns JSON.
 6. Broker: returns result to agent. Audit recorded.
@@ -188,7 +191,7 @@ See [ADR 004](decisions/004-secrets-at-workload.md) and [`40-secrets.md`](40-sec
 - **Tailscale VPN + Serve**: only path agents use to reach the broker. Tailscale Serve terminates HTTPS for `broker.<tailnet>.ts.net` and proxies to localhost.
 - **Broker**: binds `127.0.0.1:NNNN` only. Not exposed beyond Tailscale Serve.
 - **Tool containers**: bind `127.0.0.1:NNNN` only. Not reachable from anywhere except the broker host.
-- **1Password Connect**: runs on the home network, reachable from the tool VM (currently at a Tailscale IP). Only the toolyard authenticates to it.
+- **Infisical**: runs on the home network, reachable from the tool VM. Only the toolyard authenticates to it.
 
 ## Out of scope for v1
 
@@ -201,13 +204,14 @@ See [ADR 004](decisions/004-secrets-at-workload.md) and [`40-secrets.md`](40-sec
 - Agent-assisted catalog review or `brokerctl propose`-style flows.
 - Web-based approval UI.
 
-These are explicitly deferred, not forgotten. See [`50-migration.md`](50-migration.md) for what carries over from the old `agent-broker/`.
+These are explicitly deferred, not forgotten. Current operation should follow
+the active design docs.
 
 ## Storage summary
 
-- **Broker**: `broker/state/broker.sqlite3` — callers, tokens, action_requests, approvals, grants, audit_events.
-- **Toolyard**: filesystem-driven. `tools/<id>/toolyard.yaml` is canonical. secret values are injected into container tmpfs and are not persisted on the host. `toolyard/state/toolyard-audit.jsonl` records tool starts/stops and writable-secret updates.
-- **Discord bot**: `discord-approver/state/messages.sqlite3` — `request_id ↔ message_id` mapping. Otherwise stateless.
+- **Broker**: `${XDG_STATE_HOME:-~/.local/state}/toolstack/broker/broker.sqlite3` — callers, tokens, action_requests, approvals, approval UI message mappings, grants, audit_events.
+- **Toolyard**: filesystem-driven. `tools/<id>/toolyard.yaml` is canonical. secret values are injected into container tmpfs and are not persisted on the host. `${XDG_STATE_HOME:-~/.local/state}/toolstack/toolyard-audit.jsonl` records tool starts/stops and writable-secret updates.
+- **Discord bot**: no local persistent state; it stores `request_id ↔ message_id` mappings through the broker.
 - **Per-tool**: each tool owns its own data dir if persistence is needed (mounted volume per the tool's `toolyard.yaml`).
 
 ## Component sizes (target)

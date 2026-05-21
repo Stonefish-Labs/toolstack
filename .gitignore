@@ -6,6 +6,13 @@ secrets.env
 *.key
 secrets/
 
+# Local/private tool implementations that are not part of the public repo
+tools/*
+!tools/hello-rest/
+!tools/hello-rest/**
+!tools/time-mcp/
+!tools/time-mcp/**
+
 # Runtime state and local data
 state/
 *.sqlite3
@@ -41,6 +48,7 @@ venv/
 
 # OS and editor metadata
 .DS_Store
+._*
 Thumbs.db
 .idea/
 .vscode/

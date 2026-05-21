@@ -23,7 +23,6 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictRealtime=yes
 LockPersonality=yes
-ReadWritePaths=/home/admin/toolstack/discord-approver/state
 
 [Install]
 WantedBy=multi-user.target

@@ -96,7 +96,7 @@ class HTTPDispatcher:
           "arguments": <request.arguments>,
           "reason":    <request.reason>,
           "broker_request_id": <request.id>,
-          "caller": {"name": <caller>, "profile": <profile>}
+          "caller": {"name": <caller>}
         }
 
         Tool returns a JSON object on success (any shape; broker stores it as
@@ -130,7 +130,7 @@ class HTTPDispatcher:
             "arguments": request.arguments,
             "reason": request.reason,
             "broker_request_id": request.id,
-            "caller": {"name": request.caller, "profile": request.profile},
+            "caller": {"name": request.caller},
         }
 
         try:

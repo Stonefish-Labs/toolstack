@@ -20,16 +20,16 @@ from broker.api import (
 from broker.config import Config
 from broker.dispatch import SyntheticDispatcher
 from broker.signing import make_signature_headers
+from tests.conftest import create_test_caller
 
 
 @pytest.fixture
-def app_client(tmp_path, sample_profiles_dir):
+def app_client(tmp_path):
     """Create a test app with TestClient."""
     config = Config(
         bind_addr="127.0.0.1:0",
         state_dir=tmp_path / "state",
         tools_dir=tmp_path / "tools",
-        policies_dir=sample_profiles_dir,
         approval_timeout_seconds=86400,
         grant_default_ttl_seconds=3600,
         allow_unknown_tools=True,
@@ -46,7 +46,7 @@ def agent_token(app_client):
     """Create an agent caller and return (token, client)."""
     client, config = app_client
     from broker.api import _conn
-    caller = db.create_caller(_conn, "agent.test", "home-default")
+    caller = create_test_caller(_conn, "agent.test", "home-default")
     raw, _ = tokens.create_token_for_caller(_conn, caller["id"])
     return raw, client
 
@@ -56,7 +56,7 @@ def approver_token(app_client):
     """Create an approver caller and return (token, client)."""
     client, config = app_client
     from broker.api import _conn
-    caller = db.create_caller(_conn, "bot.approver", "approver")
+    caller = create_test_caller(_conn, "bot.approver", "approver")
     raw, _ = tokens.create_token_for_caller(_conn, caller["id"])
     return raw, client
 
@@ -66,10 +66,50 @@ def registry_admin_token(app_client):
     """Create a registry-admin caller and return (token, client)."""
     client, config = app_client
     from broker.api import _conn
-    caller = db.create_caller(_conn, "svc.toolyard", "registry-admin")
+    caller = create_test_caller(_conn, "svc.toolyard", "registry-admin")
     raw, _ = tokens.create_token_for_caller(_conn, caller["id"])
     return raw, client
 
+
+@pytest.fixture
+def admin_app_client(tmp_path):
+    """Create a test app with registered tools for admin policy editing."""
+    tools_dir = tmp_path / "tools"
+    (tools_dir / "music").mkdir(parents=True)
+    (tools_dir / "music" / "toolyard.yaml").write_text(
+        """
+id: music
+type: rest
+entrypoint:
+  image: music:latest
+  port: 5200
+operations:
+  - { op: get_status, risk: read }
+  - { op: play_item, risk: write }
+""",
+        encoding="utf-8",
+    )
+    config = Config(
+        bind_addr="127.0.0.1:0",
+        state_dir=tmp_path / "state",
+        tools_dir=tools_dir,
+        approval_timeout_seconds=86400,
+        grant_default_ttl_seconds=3600,
+        allow_unknown_tools=False,
+    )
+    app = create_app(config, SyntheticDispatcher())
+
+    with TestClient(app) as client:
+        yield client, config
+
+
+@pytest.fixture
+def admin_token(admin_app_client):
+    client, _ = admin_app_client
+    from broker.api import _conn
+    caller = create_test_caller(_conn, "svc.panel", "control-panel-admin")
+    raw, _ = tokens.create_token_for_caller(_conn, caller["id"])
+    return raw, client
 
 
 
@@ -78,19 +118,18 @@ def tasks_agent_token(app_client):
     """Create a Tasks read/write caller and return (token, client)."""
     client, config = app_client
     from broker.api import _conn
-    caller = db.create_caller(_conn, "agent.tasks-test", "tasks-agent")
+    caller = create_test_caller(_conn, "agent.tasks-test", "tasks-agent")
     raw, _ = tokens.create_token_for_caller(_conn, caller["id"])
     return raw, client
 
 
 @pytest.fixture
-def signed_app_client(tmp_path, sample_profiles_dir):
+def signed_app_client(tmp_path):
     """Create a test app that requires HMAC signatures for approver callers."""
     config = Config(
         bind_addr="127.0.0.1:0",
         state_dir=tmp_path / "state",
         tools_dir=tmp_path / "tools",
-        policies_dir=sample_profiles_dir,
         approval_timeout_seconds=86400,
         grant_default_ttl_seconds=3600,
         allow_unknown_tools=True,
@@ -110,7 +149,7 @@ def signed_app_client(tmp_path, sample_profiles_dir):
 def signed_approver_token(signed_app_client):
     client, config = signed_app_client
     from broker.api import _conn
-    caller = db.create_caller(_conn, "bot.signed", "approver")
+    caller = create_test_caller(_conn, "bot.signed", "approver")
     raw, _ = tokens.create_token_for_caller(_conn, caller["id"])
     return raw, client
 
@@ -200,7 +239,7 @@ def test_action_denied_returns_403(agent_token):
 
 
 def test_list_requests_requires_broker_op(agent_token):
-    """Agent profile doesn't have broker.list_requests → 403."""
+    """Agent policy doesn't have broker.list_requests -> 403."""
     raw, client = agent_token
     resp = client.get(
         "/v1/requests",
@@ -219,15 +258,97 @@ def test_list_requests_with_approver(approver_token):
     assert "requests" in resp.json()
 
 
+def test_admin_endpoints_require_admin_policy(agent_token):
+    raw, client = agent_token
+    resp = client.get(
+        "/v1/admin/callers",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 403
+
+
+def test_admin_create_caller_returns_one_time_token(admin_token):
+    raw, client = admin_token
+    resp = client.post(
+        "/v1/admin/callers",
+        json={
+            "name": "agent.kira",
+            "policy": {"tools": {"music": {"operations": {"get_status": "allow"}}}},
+        },
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["caller"]["name"] == "agent.kira"
+    assert set(data["caller"]) == {"id", "name", "created_at", "revoked_at"}
+    assert data["token"]
+    assert len(data["hash_prefix"]) == 8
+
+    resp = client.get(
+        "/v1/admin/tokens",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 200
+    token_rows = resp.json()["tokens"]
+    assert any(row["caller_name"] == "agent.kira" for row in token_rows)
+    assert all("token_hash" not in row for row in token_rows)
+
+
+def test_admin_tools_include_declared_operation_risk(admin_token):
+    raw, client = admin_token
+    resp = client.get(
+        "/v1/admin/tools",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 200
+    music = resp.json()["tools"]["music"]
+    assert music["operations"] == [
+        {"op": "get_status", "risk": "read", "description": ""},
+        {"op": "play_item", "risk": "write", "description": ""},
+    ]
+
+
+def test_admin_caller_policy_roundtrip_structured_operation_rules(admin_token):
+    raw, client = admin_token
+    create = client.post(
+        "/v1/admin/callers",
+        json={"name": "agent.panel-test"},
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert create.status_code == 200
+    payload = {
+        "tools": {
+            "music": {
+                "operations": {
+                    "get_status": "allow",
+                    "play_item": "review",
+                }
+            }
+        },
+        "auto_grant_ttl_seconds": 120,
+    }
+    resp = client.put(
+        "/v1/admin/callers/agent.panel-test/policy",
+        json=payload,
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["caller"] == "agent.panel-test"
+    assert body["tools"]["music"]["operations"]["get_status"] == "allow"
+    assert body["tools"]["music"]["operations"]["play_item"] == "review"
+    assert body["auto_grant_ttl_seconds"] == 120
+
+
 def test_approve_reject_flow(app_client):
     """End-to-end: agent creates pending request, approver approves it."""
     client, config = app_client
     from broker.api import _conn
 
     # Create both callers
-    agent = db.create_caller(_conn, "agent.e2e", "tasks-agent")
+    agent = create_test_caller(_conn, "agent.e2e", "tasks-agent")
     agent_raw, _ = tokens.create_token_for_caller(_conn, agent["id"])
-    approver = db.create_caller(_conn, "bot.e2e", "approver")
+    approver = create_test_caller(_conn, "bot.e2e", "approver")
     approver_raw, _ = tokens.create_token_for_caller(_conn, approver["id"])
 
     # Agent: create a review-required request
@@ -277,9 +398,9 @@ def test_reject_flow(app_client):
     client, config = app_client
     from broker.api import _conn
 
-    agent = db.create_caller(_conn, "agent.rej", "tasks-agent")
+    agent = create_test_caller(_conn, "agent.rej", "tasks-agent")
     agent_raw, _ = tokens.create_token_for_caller(_conn, agent["id"])
-    approver = db.create_caller(_conn, "bot.rej", "approver")
+    approver = create_test_caller(_conn, "bot.rej", "approver")
     approver_raw, _ = tokens.create_token_for_caller(_conn, approver["id"])
 
     # Create pending request
@@ -300,6 +421,83 @@ def test_reject_flow(app_client):
     rejected = resp.json()
     assert rejected["status"] == "rejected"
     assert rejected["decision_note"] == "not allowed"
+
+
+def test_approval_message_endpoints_with_approver(app_client):
+    client, config = app_client
+    from broker.api import _conn
+
+    agent = create_test_caller(_conn, "agent.msg", "tasks-agent")
+    approver = create_test_caller(_conn, "bot.msg", "approver")
+    approver_raw, _ = tokens.create_token_for_caller(_conn, approver["id"])
+    req = db.create_request(
+        _conn,
+        caller_id=agent["id"],
+        tool="tasks",
+        op="delete_object",
+        args_json="{}",
+        reason=None,
+        status="pending_review",
+        policy_decision="{}",
+    )
+
+    resp = client.get(
+        f"/v1/approval-messages/{req['id']}",
+        headers={"Authorization": f"Bearer {approver_raw}"},
+    )
+    assert resp.status_code == 404
+
+    resp = client.put(
+        f"/v1/approval-messages/{req['id']}",
+        json={"message_id": 999, "last_status": "pending_review"},
+        headers={"Authorization": f"Bearer {approver_raw}"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["request_id"] == req["id"]
+    assert data["surface"] == "discord"
+    assert data["message_id"] == 999
+
+    resp = client.get(
+        "/v1/approval-messages",
+        headers={"Authorization": f"Bearer {approver_raw}"},
+    )
+    assert resp.status_code == 200
+    assert [m["request_id"] for m in resp.json()["messages"]] == [req["id"]]
+
+    resp = client.put(
+        f"/v1/approval-messages/{req['id']}",
+        json={"message_id": 999, "last_status": "completed"},
+        headers={"Authorization": f"Bearer {approver_raw}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["last_status"] == "completed"
+
+    resp = client.delete(
+        f"/v1/approval-messages/{req['id']}",
+        headers={"Authorization": f"Bearer {approver_raw}"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["deleted"] is True
+
+
+def test_approval_message_endpoints_require_approver_ops(agent_token):
+    raw, client = agent_token
+    resp = client.get(
+        "/v1/approval-messages",
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 403
+
+
+def test_approval_message_upsert_requires_existing_request(approver_token):
+    raw, client = approver_token
+    resp = client.put(
+        "/v1/approval-messages/99999",
+        json={"message_id": 999, "last_status": "pending_review"},
+        headers={"Authorization": f"Bearer {raw}"},
+    )
+    assert resp.status_code == 404
 
 
 def test_audit_endpoint(approver_token):
@@ -345,7 +543,7 @@ def test_reload_requires_broker_op(agent_token):
 
 
 def test_reload_forbidden_for_approver(approver_token):
-    """The approver profile cannot reload the broker registry."""
+    """The approver policy cannot reload the broker registry."""
     raw, client = approver_token
     resp = client.post(
         "/v1/registry/reload",
@@ -355,7 +553,7 @@ def test_reload_forbidden_for_approver(approver_token):
 
 
 def test_reload_allowed_for_registry_admin(registry_admin_token):
-    """The registry-admin profile owns broker.registry.reload."""
+    """The registry-admin policy owns broker.registry.reload."""
     raw, client = registry_admin_token
     resp = client.post(
         "/v1/registry/reload",
@@ -379,9 +577,9 @@ def test_signed_approver_get_and_approve_succeed(signed_app_client):
     client, _ = signed_app_client
     from broker.api import _conn
 
-    agent = db.create_caller(_conn, "agent.signing", "tasks-agent")
+    agent = create_test_caller(_conn, "agent.signing", "tasks-agent")
     agent_raw, _ = tokens.create_token_for_caller(_conn, agent["id"])
-    approver = db.create_caller(_conn, "bot.signing", "approver")
+    approver = create_test_caller(_conn, "bot.signing", "approver")
     approver_raw, _ = tokens.create_token_for_caller(_conn, approver["id"])
 
     resp = client.post(
@@ -453,9 +651,9 @@ def test_approver_body_tampering_rejected(signed_app_client):
     client, _ = signed_app_client
     from broker.api import _conn
 
-    agent = db.create_caller(_conn, "agent.tamper", "tasks-agent")
+    agent = create_test_caller(_conn, "agent.tamper", "tasks-agent")
     agent_raw, _ = tokens.create_token_for_caller(_conn, agent["id"])
-    approver = db.create_caller(_conn, "bot.tamper", "approver")
+    approver = create_test_caller(_conn, "bot.tamper", "approver")
     approver_raw, _ = tokens.create_token_for_caller(_conn, approver["id"])
 
     resp = client.post(
@@ -497,35 +695,16 @@ operations:
 
 
 @pytest.fixture
-def mcp_app_client(tmp_path, sample_profiles_dir):
-    """App with a registered time-mcp tool and an mcp-tester profile."""
+def mcp_app_client(tmp_path):
+    """App with a registered time-mcp tool and caller policy presets."""
     tools_dir = tmp_path / "tools"
     tools_dir.mkdir()
     _write_mcp_tool(tools_dir)
-
-    # Profile that allows time-mcp's read op and requires review for a write op.
-    (sample_profiles_dir / "mcp-tester.yaml").write_text("""
-profile: mcp-tester
-allowed_tools:
-  - time-mcp
-allowed_ops:
-  - "time-mcp.current_time"
-review_ops:
-  - "time-mcp.skip_*"
-auto_grant_ttl_seconds: 0
-""")
-    # Profile with NO access to time-mcp.
-    (sample_profiles_dir / "no-mcp.yaml").write_text("""
-profile: no-mcp
-allowed_tools:
-  - media
-""")
 
     config = Config(
         bind_addr="127.0.0.1:0",
         state_dir=tmp_path / "state",
         tools_dir=tools_dir,
-        policies_dir=sample_profiles_dir,
         approval_timeout_seconds=86400,
         grant_default_ttl_seconds=0,
         allow_unknown_tools=False,
@@ -535,10 +714,10 @@ allowed_tools:
         yield client, config
 
 
-def _make_caller(client, name, profile):
+def _make_caller(client, name, policy_name):
     """Create a caller via direct DB call and return its raw token."""
     from broker.api import _conn
-    caller = db.create_caller(_conn, name, profile)
+    caller = create_test_caller(_conn, name, policy_name)
     raw, _ = tokens.create_token_for_caller(_conn, caller["id"])
     return raw
 
@@ -624,8 +803,8 @@ def test_mcp_tools_list_blind_forwards(mcp_app_client, monkeypatch):
     assert captured["body"]["method"] == "tools/list"
 
 
-def test_mcp_tools_list_denied_for_profile_without_tool(mcp_app_client):
-    """A profile that doesn't include time-mcp can't list its tools."""
+def test_mcp_tools_list_denied_for_caller_without_tool(mcp_app_client):
+    """A caller policy that doesn't include time-mcp can't list its tools."""
     client, _ = mcp_app_client
     raw = _make_caller(client, "agent.nomcp", "no-mcp")
     resp = client.post(
@@ -680,7 +859,7 @@ def test_mcp_tools_call_review_returns_jsonrpc_error(mcp_app_client):
 
 
 def test_mcp_tools_call_denied(mcp_app_client):
-    """A profile that doesn't allow the op gets -32001 denied."""
+    """A caller policy that doesn't allow the op gets -32001 denied."""
     client, _ = mcp_app_client
     raw = _make_caller(client, "agent.denied", "no-mcp")
     resp = client.post(

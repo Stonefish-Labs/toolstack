@@ -13,14 +13,15 @@ You have a broker on your tailnet. Agents (Hermes, pi-agent, Codex, etc.)
 authenticate to it with a bearer token, request a *named action* on a *named
 tool* (e.g., `hello-rest.greet` or `time-mcp.current_time`), and the broker:
 
-1. Verifies the token → identifies the caller and its profile.
+1. Verifies the token → identifies the caller.
 2. Evaluates policy → allow / require human review / deny.
 3. If review: posts a card to Discord; waits for a human click.
 4. If allowed: forwards to the tool's container (REST or JSON-RPC over MCP).
 5. Returns the result, audits the whole transaction.
 
-You — the operator — never give agents raw API keys. You give them broker
-tokens scoped to profiles, and the broker decides what those profiles can do.
+You — the operator — never give agents raw API keys. You give each caller a
+broker token and a caller-owned policy that says exactly which operations are
+allowed, reviewed, or denied.
 
 ## Quickstart for agents
 
@@ -95,18 +96,15 @@ echo 'alias brokerctl="/home/admin/toolstack/broker/.venv/bin/brokerctl"' >> ~/.
 ### Add an agent
 
 ```bash
-brokerctl create-caller --name agent.hermes --profile home-default
+brokerctl create-caller --name agent.hermes
 ```
 
 The raw token is printed **once**. Distribute it to the agent immediately
 (write to a file mode 0600, or paste into the agent's secrets store).
 
-Profiles available out of the box:
-- `home-default` — typical agent. Read access to listed tools, review for writes, deny for destructive.
-- `readonly` — read-only across listed tools.
-- `approver` - for the Discord bot; only allows approval/list/audit broker operations and may require HMAC signing. It cannot reload the registry. `registry-admin` is used by toolyardd only for `broker.registry.reload`. **Don't** give an agent either service profile.
-
-To use a different policy shape, create a new profile under `broker/policies/profiles/<name>.yaml` and `brokerctl reload-registry` (or curl `/v1/registry/reload`).
+Then open Broker Panel, choose the caller, and set its operation policy. The
+panel shows each operation's description from `toolyard.yaml`, which makes it
+the safest place to decide whether an op should be `allow`, `review`, or `deny`.
 
 ### Revoke an agent's token
 
@@ -121,22 +119,11 @@ Revoked tokens are rejected on the next request — no caching.
 ### Rotate an agent's token
 
 ```bash
-brokerctl create-caller --name agent.hermes-v2 --profile home-default
-# Hand the new token over, update the agent, verify it works
-brokerctl revoke-token <old-hash-prefix>
+brokerctl refresh-token agent.hermes
 ```
 
-If you must keep the same caller name, revoke the old token first (which
-revokes the *token row*, not the caller), then issue a new one:
-
-```bash
-# Find the existing token hash for that caller
-brokerctl list-tokens | grep agent.hermes
-brokerctl revoke-token <old-hash-prefix>
-
-# Issue a new one to the same caller (via the DB — there's no current CLI for "add token to existing caller")
-# Easiest: create-caller with a v2 name. Or use SQL directly if you really must.
-```
+This revokes the caller's active token rows and prints one replacement token.
+Broker Panel exposes the same operation as "Refresh Token".
 
 ### See what agents are doing
 
@@ -224,7 +211,7 @@ adding a tool should be "drop a folder, pick an entry point, run one command."
    ```
 
 4. **Write the app code**. Read secrets from `/run/secrets/<name>` files — no
-   1Password client library in the container:
+   Infisical client library in the container:
 
    ```python
    def secret(name: str) -> str:
@@ -234,9 +221,10 @@ adding a tool should be "drop a folder, pick an entry point, run one command."
    API_KEY = secret("api_key")
    ```
 
-5. **Provision secrets in 1Password** (if the tool needs any). In the vault
-   named in `toolyard.yaml` (default `ToolServer`), create item `my-tool` with field
-   `API_KEY`.
+5. **Provision secrets in Infisical** (if the tool needs any). In the project
+   named by `vault` in `toolyard.yaml` (default `ToolServer`), create path
+   `/my-tool` with secret `API_KEY`. Add a matching host credential file at
+   `/home/admin/.config/toolstack/infisical/my-tool.env`.
 
 6. **Bring it up**:
 
@@ -253,23 +241,14 @@ adding a tool should be "drop a folder, pick an entry point, run one command."
      -d '{"arguments": {}}'
    ```
 
-8. **Update broker policy** to allow agents to call it. Edit
-   `broker/policies/profiles/home-default.yaml`:
-
-   ```yaml
-   allowed_tools:
-     - my-tool          # add this
-   allowed_ops:
-     - "my-tool.get_*"  # auto-allow reads
-   review_ops:
-     - "my-tool.do_thing"  # require approval for writes
-   ```
+8. **Reload the broker registry**, then open Broker Panel and enable the new
+   operations on the callers that should use them.
 
 9. **Reload the broker**:
 
    ```bash
    curl -X POST http://127.0.0.1:8765/v1/registry/reload \
-     -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/broker-admin.token)"
+     -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/tokens/broker-registry-admin.token)"
    ```
 
 10. **Test through the broker**:
@@ -292,10 +271,10 @@ reload (the toolyard pings it automatically via `TOOLYARD_BROKER_RELOAD_URL`).
 - [ ] Container listens on `0.0.0.0` (toolyard binds host-side to 127.0.0.1)
 - [ ] Tool reads secrets from `/run/secrets/<name>`
 - [ ] `/health` endpoint if `healthcheck.http` is declared
-- [ ] `operations` lists each op with `risk: read|write|destructive`
-- [ ] 1Password vault has an item with the right fields
-- [ ] Broker `policies/profiles/<profile>.yaml` includes the tool
-- [ ] Reload the broker after policy changes
+- [ ] `operations` lists each op with `risk` and a short `description`
+- [ ] Infisical project has a path with the right secret keys
+- [ ] Broker registry was reloaded after adding or changing `toolyard.yaml`
+- [ ] Caller policies were updated in Broker Panel
 
 ## Approval flow
 
@@ -339,7 +318,7 @@ toolyard restart my-tool
 ```
 
 This rebuilds the image (if `entrypoint.build` is set), re-resolves secrets
-from 1Password, and bounces the container. Takes 1-5 seconds depending on what
+from Infisical, and bounces the container. Takes 1-5 seconds depending on what
 changed. The broker doesn't need restarting — the registry reload happens
 automatically.
 
@@ -376,46 +355,45 @@ toolyard logs my-tool --follow
 docker logs -f toolyard-my-tool
 ```
 
-### Update a secret in 1Password
+### Update a secret in Infisical
 
-1. Edit the field in 1Password (e.g., `ToolServer/my-tool/API_KEY`).
+1. Edit the secret in Infisical (e.g., project `ToolServer`, path `/my-tool`, key `API_KEY`).
 2. `toolyard restart my-tool` — the toolyard re-resolves and rewrites the
    secret file; the tool reads the new value on startup.
 
 No broker involvement, no token rotation.
 
-### Rotate the toolyard's own Connect token
+### Rotate a tool's Infisical machine identity
 
-1. Generate a new Connect token in 1Password (same vault scope).
-2. Replace `/home/admin/.config/toolstack/op-connect-read.token` (and write variant if any).
+1. Generate a new Universal Auth client secret for that tool path.
+2. Replace `/home/admin/.config/toolstack/infisical/<path>.env`.
 3. `sudo systemctl restart toolyard.service`.
-4. Revoke the old token in the 1Password admin.
+4. Revoke the old client secret in Infisical.
 
-### Reload policies without restarting the broker
+### Reload the registry without restarting the broker
 
 ```bash
 curl -X POST http://127.0.0.1:8765/v1/registry/reload \
-  -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/broker-admin.token)"
+  -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/tokens/broker-registry-admin.token)"
 ```
 
-Policies are reloaded automatically as part of this call, alongside the tool
-registry. Edits to `policies/profiles/*.yaml` take effect immediately for new
-requests; in-flight requests are unaffected.
+This reloads tool descriptors, including operation descriptions. Caller policy
+edits are stored in SQLite by the admin API and do not require a registry reload.
 
 ## Wiring up specific agents
 
 For tools with many operations, prefer a thin agent skill that calls broker
-actions with broker-tool/profile config instead of putting every action in the
+actions with caller token config instead of putting every action in the
 agent's always-loaded context. See
 [`design/22-agent-skill-convention.md`](design/22-agent-skill-convention.md)
 for the portable convention.
 
-The skill should bootstrap profile config and token directories under the
+The skill should bootstrap caller config and token directories under the
 Toolstack layout:
 
 ```text
-<config-home>/toolstack/<broker-tool>/profiles/<profile>.env
-<config-home>/toolstack/<broker-tool>/tokens/<profile>.token
+<config-home>/toolstack/<broker-tool>/callers/<caller>.env
+<config-home>/toolstack/<broker-tool>/tokens/<caller>.token
 ```
 
 Normal-use skill commands should be stable executables that work from any
@@ -432,7 +410,7 @@ with no code changes — only the URL and token need updating.
 
 ```bash
 # Issue a token
-brokerctl create-caller --name agent.hermes --profile home-default
+brokerctl create-caller --name agent.hermes
 
 # In Hermes config (path varies):
 broker_url: https://broker.your-tailnet.ts.net
@@ -505,26 +483,14 @@ brokerctl list-tokens | grep <caller-name>
 
 ### `403 denied`
 
-The token is valid, but the caller's profile doesn't allow this op.
+The token is valid, but the caller policy doesn't allow this op.
 
 ```bash
-# Find the caller's profile
-brokerctl list-callers | grep <caller-name>
-
-# Check the profile YAML
-cat broker/policies/profiles/<profile>.yaml
-
-# Is the tool in allowed_tools?
-# Is the op in allowed_ops, review_ops, or denied_ops?
-# Remember: denied takes precedence over allowed; allowed_ops takes precedence over review_ops.
+# Open Broker Panel, choose the caller, and inspect the tool operation.
+# Missing operations deny by default.
 ```
 
-If you change the profile, reload:
-
-```bash
-curl -X POST -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/broker-admin.token)" \
-  http://127.0.0.1:8765/v1/registry/reload
-```
+Caller policy edits take effect on the next request.
 
 ### `404 unknown_tool`
 
@@ -532,7 +498,7 @@ The broker's registry doesn't have this tool.
 
 ```bash
 # Is the tool in the registry?
-curl -s -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/broker-admin.token)" \
+curl -s -H "Authorization: Bearer $(cat /home/admin/.config/toolstack/tokens/broker-registry-admin.token)" \
   http://127.0.0.1:8765/v1/registry | jq '.tools | keys'
 
 # Is the file there?
@@ -640,7 +606,7 @@ secrets:
     writable: true
 ```
 
-The container does not receive a 1Password token. It receives a per-tool Unix
+The container does not receive an Infisical credential. It receives a per-tool Unix
 socket mounted at `/run/toolyard/secrets.sock`. To update an allowlisted field:
 
 ```bash

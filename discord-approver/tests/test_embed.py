@@ -78,12 +78,10 @@ class TestEmbedLayout:
         d = embed.to_dict()
         fields = d["fields"]
         caller_field = fields[0]
-        profile_field = fields[1]
-        risk_field = fields[2]
+        risk_field = fields[1]
         assert caller_field["name"] == "Caller"
         assert caller_field["value"] == "agent.hermes"
         assert caller_field["inline"] is True
-        assert profile_field["name"] == "Profile"
         assert risk_field["name"] == "Risk"
 
     def test_reason_field_present_when_set(self, pending_request):

@@ -91,17 +91,19 @@ class Reconciler:
         logger.info("startup sync: reconciling existing state")
 
         # 1. Re-check all tracked messages
-        stored = self._store.list_all()
+        stored = await self._store.list_all()
         for msg in stored:
             try:
                 current = await self._broker.get_request(msg.request_id)
                 if current is None:
                     # Request no longer exists in broker
                     await self._ui.edit_card(msg.message_id, None)
-                    self._store.delete(msg.request_id)
+                    await self._store.delete(msg.request_id)
                 elif current.status.value != msg.last_status:
                     await self._ui.edit_card(msg.message_id, current)
-                    self._store.upsert(msg.request_id, msg.message_id, current.status.value)
+                    await self._store.upsert(
+                        msg.request_id, msg.message_id, current.status.value
+                    )
                     if current.status in _TERMINAL_STATUSES:
                         # Keep in store for audit trail, but update status
                         pass
@@ -112,11 +114,11 @@ class Reconciler:
         try:
             pending = await self._broker.list_pending()
             for req in pending:
-                existing = self._store.get(req.id)
+                existing = await self._store.get(req.id)
                 if existing is None:
                     logger.info("posting card for request %d (%s.%s)", req.id, req.tool, req.op)
                     message_id = await self._ui.post_card(req)
-                    self._store.upsert(req.id, message_id, req.status.value)
+                    await self._store.upsert(req.id, message_id, req.status.value)
                 # Track the highest ID we've seen
                 if self._last_seen_id is None or req.id > self._last_seen_id:
                     self._last_seen_id = req.id
@@ -146,7 +148,7 @@ class Reconciler:
             return
 
         for req in new_pending:
-            existing = self._store.get(req.id)
+            existing = await self._store.get(req.id)
             if existing is not None:
                 continue  # Already tracked
 
@@ -156,7 +158,7 @@ class Reconciler:
                     req.id, req.tool, req.op,
                 )
                 message_id = await self._ui.post_card(req)
-                self._store.upsert(req.id, message_id, req.status.value)
+                await self._store.upsert(req.id, message_id, req.status.value)
             except Exception:
                 logger.exception("failed to post card for request %d", req.id)
 
@@ -165,7 +167,7 @@ class Reconciler:
 
     async def _refresh_tracked(self) -> None:
         """Re-check all tracked non-terminal requests for state changes."""
-        stored = self._store.list_all()
+        stored = await self._store.list_all()
         for msg in stored:
             # Skip already-terminal messages to avoid unnecessary broker calls
             if msg.last_status in {s.value for s in _TERMINAL_STATUSES}:
@@ -188,7 +190,7 @@ class Reconciler:
                         "failed to edit card for disappeared request %d",
                         msg.request_id,
                     )
-                self._store.delete(msg.request_id)
+                await self._store.delete(msg.request_id)
                 continue
 
             if current.status.value != msg.last_status:
@@ -202,7 +204,7 @@ class Reconciler:
                     logger.exception(
                         "failed to edit card for request %d", msg.request_id
                     )
-                self._store.upsert(
+                await self._store.upsert(
                     msg.request_id, msg.message_id, current.status.value
                 )
 
@@ -215,7 +217,7 @@ class Reconciler:
         if self._max_terminal <= 0:
             return
 
-        stored = self._store.list_all()
+        stored = await self._store.list_all()
         terminal = [
             m for m in stored if m.last_status in _TERMINAL_STATUS_VALUES
         ]
@@ -230,7 +232,7 @@ class Reconciler:
         for msg in to_prune:
             try:
                 await self._ui.delete_card(msg.message_id)
-                self._store.delete(msg.request_id)
+                await self._store.delete(msg.request_id)
                 logger.info(
                     "pruned terminal message for request %d (status=%s)",
                     msg.request_id, msg.last_status,

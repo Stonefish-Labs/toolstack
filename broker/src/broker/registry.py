@@ -67,6 +67,7 @@ def _parse_descriptor(yaml_path: Path) -> ToolDescriptor | None:
         return ToolDescriptor(
             id=tool_id,
             type=tool_type,
+            description=data.get("description") or "",
             enabled=enabled,
             port=port,
             operations=data.get("operations") or [],

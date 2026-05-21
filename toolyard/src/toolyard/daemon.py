@@ -14,7 +14,7 @@ from toolyard.config import Config, load_config
 from toolyard.docker_driver import CLIDockerDriver, DockerDriver
 from toolyard.lifecycle import down, up
 from toolyard.registry import walk_tools
-from toolyard.secrets import ConnectSecretResolver, ConnectSecretWriter, SecretResolver, SecretWriter
+from toolyard.secrets import InfisicalSecretResolver, SecretResolver, SecretWriter
 from toolyard.write_proxy import WritableSecretProxy, WritableSecretUnixServer
 
 
@@ -34,17 +34,12 @@ class ToolyardDaemon:
     def start(self) -> None:
         descs = [desc for desc in walk_tools(self.config.tools_dir) if desc.enabled]
         if any(desc.secrets for desc in descs) and self.resolver is None:
-            self.config.require_connect()
-            self.resolver = ConnectSecretResolver(
-                self.config.op_connect_host or "",
-                self.config.op_connect_token_file or "",
-            )
+            self.resolver = _infisical_store(self.config)
         if any(desc.has_writable_secrets for desc in descs) and self.writer is None:
-            self.config.require_write_connect()
-            self.writer = ConnectSecretWriter(
-                self.config.op_connect_host or "",
-                self.config.op_connect_write_token_file or "",
-            )
+            if isinstance(self.resolver, InfisicalSecretResolver):
+                self.writer = self.resolver
+            else:
+                self.writer = _infisical_store(self.config)
 
         for desc in descs:
             down(tool_id=desc.id, driver=self.driver)
@@ -95,6 +90,16 @@ class ToolyardDaemon:
         for server in self.servers.values():
             server.stop()
         self.servers.clear()
+
+
+def _infisical_store(config: Config) -> InfisicalSecretResolver:
+    config.require_infisical()
+    return InfisicalSecretResolver(
+        host=config.infisical_host or "",
+        credentials_dir=config.infisical_credentials_dir,
+        environment=config.infisical_environment,
+        organization_slug=config.infisical_organization_slug,
+    )
 
 
 def main(argv: list[str] | None = None) -> None:

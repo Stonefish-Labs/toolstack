@@ -27,7 +27,6 @@ curl -s -X POST http://127.0.0.1:8765/v1/_dev/inject \
   -H "Content-Type: application/json" \
   -d '{
     "caller": "agent.hermes",
-    "profile": "home-default",
     "tool": "hello-rest",
     "op": "greet",
     "risk": "read",
@@ -39,7 +38,6 @@ curl -s -X POST http://127.0.0.1:8765/v1/_dev/inject \
   -H "Content-Type: application/json" \
   -d '{
     "caller": "agent.hermes",
-    "profile": "home-default",
     "tool": "hello-rest",
     "op": "update_setting",
     "arguments": {"device_id": "abc-123", "direction": "forward"},
@@ -52,7 +50,6 @@ curl -s -X POST http://127.0.0.1:8765/v1/_dev/inject \
   -H "Content-Type: application/json" \
   -d '{
     "caller": "agent.codex",
-    "profile": "home-default",
     "tool": "demo-admin",
     "op": "delete_record",
     "arguments": {"project_id": "999", "name": "Old Project"},
